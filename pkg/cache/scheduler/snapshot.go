@@ -154,12 +154,13 @@ func (c *Cache) Snapshot(ctx context.Context, options ...SnapshotOption) (*Snaps
 			}
 		}
 	}
+	afsEntryPenaltiesSnapshot := opts.afsEntryPenalties.Snapshot()
 	for _, cq := range c.hm.ClusterQueues() {
 		if !cq.Active() || (cq.HasParent() && hierarchy.HasCycle(cq.Parent())) {
 			snap.InactiveClusterQueueSets.Insert(cq.Name)
 			continue
 		}
-		cqSnapshot, err := c.snapshotClusterQueue(ctx, cq, opts.afsEntryPenalties)
+		cqSnapshot, err := c.snapshotClusterQueue(ctx, cq, afsEntryPenaltiesSnapshot)
 		if err != nil {
 			return nil, err
 		}

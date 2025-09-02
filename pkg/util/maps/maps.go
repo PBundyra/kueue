@@ -124,3 +124,14 @@ func (dwc *SyncMap[K, V]) Keys() []K {
 	defer dwc.lock.RUnlock()
 	return slices.Collect(maps.Keys(dwc.m))
 }
+
+func (dwc *SyncMap[K, V]) Snapshot() *SyncMap[K, V] {
+	if dwc == nil {
+		return nil
+	}
+	dwc.lock.RLock()
+	defer dwc.lock.RUnlock()
+	newMap := make(map[K]V, len(dwc.m))
+	maps.Copy(newMap, dwc.m)
+	return &SyncMap[K, V]{m: newMap}
+}
