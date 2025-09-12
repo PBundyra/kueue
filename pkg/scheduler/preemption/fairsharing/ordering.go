@@ -21,7 +21,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta1"
@@ -58,10 +57,9 @@ type TargetClusterQueueOrdering struct {
 	// preemption target candidates.
 	prunedClusterQueues sets.Set[*cache.ClusterQueueSnapshot]
 	prunedCohorts       sets.Set[*cache.CohortSnapshot]
-	log                 logr.Logger
 }
 
-func MakeClusterQueueOrdering(cq *cache.ClusterQueueSnapshot, candidates []*workload.Info, log logr.Logger) TargetClusterQueueOrdering {
+func MakeClusterQueueOrdering(cq *cache.ClusterQueueSnapshot, candidates []*workload.Info) TargetClusterQueueOrdering {
 	t := TargetClusterQueueOrdering{
 		preemptorCq:        cq,
 		preemptorAncestors: sets.New[*cache.CohortSnapshot](),
@@ -70,7 +68,6 @@ func MakeClusterQueueOrdering(cq *cache.ClusterQueueSnapshot, candidates []*work
 
 		prunedClusterQueues: sets.New[*cache.ClusterQueueSnapshot](),
 		prunedCohorts:       sets.New[*cache.CohortSnapshot](),
-		log:                 log,
 	}
 
 	for ancestor := range cq.PathParentToRoot() {
