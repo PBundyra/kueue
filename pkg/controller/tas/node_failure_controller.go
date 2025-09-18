@@ -21,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
+	// "strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -47,7 +47,7 @@ import (
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"sigs.k8s.io/kueue/pkg/controller/core"
 	"sigs.k8s.io/kueue/pkg/controller/tas/indexer"
-	"sigs.k8s.io/kueue/pkg/features"
+	// "sigs.k8s.io/kueue/pkg/features"
 	utilpod "sigs.k8s.io/kueue/pkg/util/pod"
 	utiltas "sigs.k8s.io/kueue/pkg/util/tas"
 	"sigs.k8s.io/kueue/pkg/workload"
@@ -102,14 +102,14 @@ func (r *nodeFailureReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 		return ctrl.Result{}, r.handleHealthyNode(ctx, req.Name, affectedWorkloads)
 	}
-	if features.Enabled(features.TASReplaceNodeOnPodTermination) {
-		return r.reconcileForReplaceNodeOnPodTermination(ctx, req.Name)
-	}
-	timeSinceNotReady := r.clock.Now().Sub(readyCondition.LastTransitionTime.Time)
-	if NodeFailureDelay > timeSinceNotReady {
-		return ctrl.Result{RequeueAfter: NodeFailureDelay - timeSinceNotReady}, nil
-	}
-	log.V(3).Info("Node is not ready and NodeFailureDelay timer expired, marking as failed")
+	// if features.Enabled(features.TASReplaceNodeOnPodTermination) {
+	// return r.reconcileForReplaceNodeOnPodTermination(ctx, req.Name)
+	// }
+	// timeSinceNotReady := r.clock.Now().Sub(readyCondition.LastTransitionTime.Time)
+	// if NodeFailureDelay > timeSinceNotReady {
+	// return ctrl.Result{RequeueAfter: NodeFailureDelay - timeSinceNotReady}, nil
+	// }
+	// log.V(3).Info("Node is not ready and NodeFailureDelay timer expired, marking as failed")
 	affectedWorkloads, err = r.getWorkloadsOnNode(ctx, req.Name)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -230,12 +230,13 @@ func (r *nodeFailureReconciler) getWorkloadsForImmediateReplacement(ctx context.
 // evictWorkloadIfNeeded idempotently evicts the workload when the node has failed.
 // It returns whether the node was evicted, and whether an error was encountered.
 func (r *nodeFailureReconciler) evictWorkloadIfNeeded(ctx context.Context, wl *kueue.Workload, nodeName string) (bool, error) {
-	if workload.HasUnhealthyNodes(wl) && !workload.HasUnhealthyNode(wl, nodeName) && !workload.IsEvicted(wl) {
+	if !workload.IsEvicted(wl) {
 		unhealthyNodeNames := workload.UnhealthyNodeNames(wl)
 		log := ctrl.LoggerFrom(ctx).WithValues("unhealthyNodes", unhealthyNodeNames)
-		log.V(3).Info("Evicting workload due to multiple node failures")
-		allUnhealthyNodeNames := append(unhealthyNodeNames, nodeName)
-		evictionMsg := fmt.Sprintf(nodeMultipleFailuresEvictionMessageFormat, strings.Join(allUnhealthyNodeNames, ", "))
+		log.V(3).Info("Evicting workload due to node failure")
+		// allUnhealthyNodeNames := append(unhealthyNodeNames, nodeName)
+		// evictionMsg := fmt.Sprintf(nodeMultipleFailuresEvictionMessageFormat, strings.Join(allUnhealthyNodeNames, ", "))
+		evictionMsg := "Workload eviction triggered due to TAS assigned node failures, including: %s"
 		if evictionErr := workload.Evict(ctx, r.client, r.recorder, wl, kueue.WorkloadEvictedDueToNodeFailures, "", evictionMsg, r.clock); evictionErr != nil {
 			log.Error(evictionErr, "Failed to complete eviction process")
 			return false, evictionErr
