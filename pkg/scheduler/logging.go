@@ -43,7 +43,7 @@ func logAdmissionAttemptIfVerbose(log logr.Logger, e *entry) {
 }
 
 func logSnapshotIfVerbose(log logr.Logger, s *schdcache.Snapshot) {
-	if logV := log.V(6); logV.Enabled() {
+	if logV := log.V(5); logV.Enabled() {
 		s.Log(logV)
 	}
 }

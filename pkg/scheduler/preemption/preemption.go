@@ -337,6 +337,14 @@ func runFirstFsStrategy(preemptionCtx *preemptionCtx, candidates []*workload.Inf
 		for candCQ.HasWorkload() {
 			candWl := candCQ.PopWorkload()
 			targetNewShare := candCQ.ComputeTargetShareAfterRemoval(candWl)
+			preemptionCtx.log.V(5).Info("Evaluating fair sharing preemption",
+				"preemptingWorkload", klog.KObj(preemptionCtx.preemptor.Obj),
+				"targetWorkload", klog.KObj(candWl.Obj),
+				"preemptorCQ", preemptionCtx.preemptorCQ.GetName(),
+				"targetCQ", candWl.ClusterQueue,
+				"preemptorNewShare", schdcache.DRS(preemptorNewShare).PreciseWeightedShare(),
+				"targetOldShare", schdcache.DRS(targetOldShare).PreciseWeightedShare(),
+				"targetNewShare", schdcache.DRS(targetNewShare).PreciseWeightedShare())
 			if strategy(preemptorNewShare, targetOldShare, targetNewShare) {
 				preemptionCtx.snapshot.RemoveWorkload(candWl)
 				reason := kueue.InCohortFairSharingReason
@@ -369,6 +377,13 @@ func runSecondFsStrategy(retryCandidates []*workload.Info, preemptionCtx *preemp
 		if fairsharing.LessThanInitialShare(preemptorNewShare, targetOldShare, fairsharing.TargetNewShare{}) {
 			// The criteria doesn't depend on the preempted workload, so just preempt the first candidate.
 			candWl := candCQ.PopWorkload()
+			preemptionCtx.log.V(5).Info("Evaluating fair sharing preemption",
+				"preemptingWorkload", klog.KObj(preemptionCtx.preemptor.Obj),
+				"targetWorkload", klog.KObj(candWl.Obj),
+				"preemptorCQ", preemptionCtx.preemptorCQ.GetName(),
+				"targetCQ", candWl.ClusterQueue,
+				"preemptorNewShare", schdcache.DRS(preemptorNewShare).PreciseWeightedShare(),
+				"targetOldShare", schdcache.DRS(targetOldShare).PreciseWeightedShare())
 			preemptionCtx.snapshot.RemoveWorkload(candWl)
 			targets = append(targets, &Target{
 				WorkloadInfo: candWl,
@@ -401,6 +416,7 @@ func (p *Preemptor) fairPreemptions(preemptionCtx *preemptionCtx, strategies []f
 	revertSimulation := preemptionCtx.preemptorCQ.SimulateUsageAddition(preemptionCtx.workloadUsage)
 
 	fits, targets, retryCandidates := runFirstFsStrategy(preemptionCtx, candidates, strategies[0])
+	preemptionCtx.log.V(2).Info("First fair sharing strategy completed", "fits", fits, "targets", logging.GetObjectReferences(targets), "retryCandidates", workload.References(retryCandidates))
 	if !fits && len(strategies) > 1 {
 		if logV := preemptionCtx.log.V(6); logV.Enabled() {
 			logV.Info("First fair sharing strategy failed, trying second strategy",
@@ -409,6 +425,7 @@ func (p *Preemptor) fairPreemptions(preemptionCtx *preemptionCtx, strategies []f
 				"retryCandidates", workload.References(retryCandidates))
 		}
 		fits, targets = runSecondFsStrategy(retryCandidates, preemptionCtx, targets)
+		preemptionCtx.log.V(2).Info("Second fair sharing strategy completed", "fits", fits, "targets", logging.GetObjectReferences(targets))
 	}
 
 	revertSimulation()
