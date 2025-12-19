@@ -18,6 +18,7 @@ package tas
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -43,10 +44,11 @@ import (
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	qcache "sigs.k8s.io/kueue/pkg/cache/queue"
 	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
-	"sigs.k8s.io/kueue/pkg/constants"
 	"sigs.k8s.io/kueue/pkg/controller/core"
 	"sigs.k8s.io/kueue/pkg/util/roletracker"
 )
+
+const BatchPeriod = time.Second * 15 // 15s
 
 var nodeSemantic = conversion.EqualitiesOrDie(
 	nodeConditionEqual,
@@ -176,7 +178,7 @@ func (h *nodeHandler) queueReconcileForNode(node *corev1.Node, q workqueue.Typed
 		if nodeBelongsToFlavor(node, cache.NodeLabels(), cache.TopologyLevels()) {
 			q.AddAfter(reconcile.Request{NamespacedName: types.NamespacedName{
 				Name: string(name),
-			}}, constants.UpdatesBatchPeriod)
+			}}, BatchPeriod)
 		}
 	}
 }
