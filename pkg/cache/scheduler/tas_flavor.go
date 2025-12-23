@@ -25,7 +25,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/fields"
+	// "k8s.io/apimachinery/pkg/fields"
 	resourcehelpers "k8s.io/component-helpers/resource"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -114,13 +114,13 @@ func (c *TASFlavorCache) snapshot(ctx context.Context) (*TASFlavorSnapshot, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to list nodes for TAS: %w", err)
 	}
-	podListOpts := &client.ListOptions{}
-	podListOpts.FieldSelector = fields.OneTermEqualSelector(indexer.TASKey, "false")
+	// podListOpts := &client.ListOptions{}
+	// podListOpts.FieldSelector = fields.OneTermEqualSelector(indexer.TASKey, "false")
 	pods := corev1.PodList{}
-	err = c.client.List(ctx, &pods, podListOpts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list non-TAS pods which are bound to nodes: %w", err)
-	}
+	// err = c.client.List(ctx, &pods, podListOpts)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to list non-TAS pods which are bound to nodes: %w", err)
+	// }
 	return c.snapshotForNodes(log, nodes.Items, pods.Items), nil
 }
 
