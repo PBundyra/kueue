@@ -717,6 +717,10 @@ After the implementation PR is merged, add the names of the tests here.
 - Reconsider support for `StrictFIFO` queueing strategy.
 - Support `WorkloadSlice`
 
+#### GA
+
+Reconsider support for `StrictFIFO` queueing strategy.
+
 <!--
 
 Clearly define what it means for the feature to be implemented and
