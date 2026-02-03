@@ -595,6 +595,18 @@ The other one is to not block Variants siblings if the first one cannot be sched
 For Alpha and Beta version of this feature we don't plan to support `StrictFIFO` queueing strategy. Based on users' feedback we will reconsider it for GA.
 
 ### Risks and Mitigations
+### FlavorFungibility Misinterpretation
+
+In the first iteration of the feature we don't plan to integrate with the `FlavorFungibility` on the
+inter-Options level. It means that the `OnSuccessPolicy` is binary - if an Option has been admitted or not.
+It doesn't take into account if preemption or borrowing was necessary to admit an Option. The preference order of Options
+is purely based on ResourceFlavors used, and user doesn't have capabilities to express what to do if e.g. two Options can be
+admitted, but the more preferable one requires preemption. The more preferable one will always be chosen.
+
+At the same time if a single Option can be scheduled onto multiple flavors due to `ExplicitOptions`, it follows
+the `FlavorFungibility` config.
+
+This may lead to confusion, so we need to address this use-case directly in the documentation.
 
 ### FlavorFungibility Misinterpretation
 
@@ -758,6 +770,14 @@ With this feature Kueue creates more API Objects that put pressure on core k8s c
 
 Additionally, since one Job corresponds to potentially multiple Workloads it increases the cost of scheduling a Job by Kueue.
 In worst case scenario Kueue scheduler needs to do **V** (number of Variants per Job) number of scheduling cycles before it admits the last one.
+However those loops are lighter than for a regular Workload, since because of the scheduling constraints they only consider a subset of ResourceFlavors.
+
+This is a drawback only for environments with thousands of Jobs incoming, where the accuracy of scheduling is amortized by the inflow
+on incoming Jobs, and hence throughput is more important. In environments with fewer and bigger Jobs, the gain from scheduling decisions and
+upgrades outweighs the performance penalty.
+
+Additionally, since one Job corresponds to potentially multiple Workloads it increases the cost of scheduling a Job by Kueue.
+In worst case scenario Kueue scheduler needs to do **V** (number of Options per Job) number of scheduling cycles before it admits the last one.
 However those loops are lighter than for a regular Workload, since because of the scheduling constraints they only consider a subset of ResourceFlavors.
 
 This is a drawback only for environments with thousands of Jobs incoming, where the accuracy of scheduling is amortized by the inflow
