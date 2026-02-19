@@ -306,6 +306,23 @@ spec:
             createDelaySeconds: 7200
 ```
 
+```
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: "cluster-queue"
+spec:
+  ...
+  concurrentAdmission:
+    onSuccess: UpgradeAboveCurrent
+    explicitOptions:
+      - name: "reservation"
+        allowedResourceFlavors: ["Reservation"]
+      - name: "on-demand"
+        allowedResourceFlavors: ["On-Demand"]
+        createDelaySeconds: 7200
+```
+
 #### Story 6: Limit when migration can happen
 As an admin I have two resource flavors in my CQ:
 1) Most preferable: reservation
@@ -331,6 +348,23 @@ spec:
             maxDeleteDelaySeconds: 86400
           - name: "on-demand"
             allowedResourceFlavors: ["on-demand"]
+```
+
+```
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: "cluster-queue"
+spec:
+  ...
+  concurrentAdmission:
+    onSuccess: UpgradeAboveCurrent
+    explicitOptions:
+      - name: "reservation"
+        allowedResourceFlavors: ["Reservation"]
+      - name: "on-demand"
+        allowedResourceFlavors: ["On-Demand"]
+        deleteDelaySeconds: 86400
 ```
 
 #### Story 7: Workload with multiple PodSets
@@ -359,6 +393,22 @@ spec:
             allowedResourceFlavors: ["reservation", "default-cpu"]
           - name: "on-demand-flavor"
             allowedResourceFlavors: ["on-demand", "default-cpu"]
+```
+
+```
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: "cluster-queue"
+spec:
+  ...
+  concurrentAdmission:
+    onSuccess: UpgradeAboveCurrent
+    explicitOptions:
+      - name: "reservation"
+        allowedResourceFlavors: ["Reservation, Default-CPU"]
+      - name: "on-demand"
+        allowedResourceFlavors: ["On-Demand, Default-CPU"]
 ```
 
 <!--
@@ -728,6 +778,8 @@ After the implementation PR is merged, add the names of the tests here.
 
 - Reconsider support for `StrictFIFO` queueing strategy.
 - Support `WorkloadSlice`
+
+Revisit the [`WorkloadStatus`](#workload-status) changes
 
 #### GA
 
