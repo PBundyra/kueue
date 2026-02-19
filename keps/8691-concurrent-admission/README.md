@@ -114,7 +114,7 @@ recreating Pods on more preferable Nodes.
 <!--
 This section is for explicitly listing the motivation, goals, and non-goals of
 this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
+motivation section can variantally provide links to [experience reports] to
 demonstrate the interest in a KEP within the wider Kubernetes community.
 
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
@@ -315,7 +315,7 @@ spec:
   ...
   concurrentAdmission:
     onSuccess: UpgradeAboveCurrent
-    explicitOptions:
+    explicitVariants:
       - name: "reservation"
         allowedResourceFlavors: ["Reservation"]
       - name: "on-demand"
@@ -359,7 +359,7 @@ spec:
   ...
   concurrentAdmission:
     onSuccess: UpgradeAboveCurrent
-    explicitOptions:
+    explicitVariants:
       - name: "reservation"
         allowedResourceFlavors: ["Reservation"]
       - name: "on-demand"
@@ -404,7 +404,7 @@ spec:
   ...
   concurrentAdmission:
     onSuccess: UpgradeAboveCurrent
-    explicitOptions:
+    explicitVariants:
       - name: "reservation"
         allowedResourceFlavors: ["Reservation, Default-CPU"]
       - name: "on-demand"
@@ -619,7 +619,7 @@ be used for sorting sibling Variants. The value of this dimension would be fille
 Thanks to that we also have a guarantee that sibling Variants are always adjacent in the heap, which
 results in Kueue scheduler picking sibling Variants one after the another, without any other Workloads in between.
 
-### Notes/Constraints/Caveats (Optional)
+### Notes/Constraints/Caveats (Variantal)
 
 #### Number of Variants
 
@@ -648,12 +648,12 @@ For Alpha and Beta version of this feature we don't plan to support `StrictFIFO`
 ### FlavorFungibility Misinterpretation
 
 In the first iteration of the feature we don't plan to integrate with the `FlavorFungibility` on the
-inter-Options level. It means that the `OnSuccessPolicy` is binary - if an Option has been admitted or not.
-It doesn't take into account if preemption or borrowing was necessary to admit an Option. The preference order of Options
-is purely based on ResourceFlavors used, and user doesn't have capabilities to express what to do if e.g. two Options can be
+inter-Variants level. It means that the `OnSuccessPolicy` is binary - if an Variant has been admitted or not.
+It doesn't take into account if preemption or borrowing was necessary to admit an Variant. The preference order of Variants
+is purely based on ResourceFlavors used, and user doesn't have capabilities to express what to do if e.g. two Variants can be
 admitted, but the more preferable one requires preemption. The more preferable one will always be chosen.
 
-At the same time if a single Option can be scheduled onto multiple flavors due to `ExplicitOptions`, it follows
+At the same time if a single Variant can be scheduled onto multiple flavors due to `ExplicitVariants`, it follows
 the `FlavorFungibility` config.
 
 This may lead to confusion, so we need to address this use-case directly in the documentation.
@@ -829,7 +829,7 @@ on incoming Jobs, and hence throughput is more important. In environments with f
 upgrades outweighs the performance penalty.
 
 Additionally, since one Job corresponds to potentially multiple Workloads it increases the cost of scheduling a Job by Kueue.
-In worst case scenario Kueue scheduler needs to do **V** (number of Options per Job) number of scheduling cycles before it admits the last one.
+In worst case scenario Kueue scheduler needs to do **V** (number of Variants per Job) number of scheduling cycles before it admits the last one.
 However those loops are lighter than for a regular Workload, since because of the scheduling constraints they only consider a subset of ResourceFlavors.
 
 This is a drawback only for environments with thousands of Jobs incoming, where the accuracy of scheduling is amortized by the inflow
