@@ -114,7 +114,7 @@ recreating Pods on more preferable Nodes.
 <!--
 This section is for explicitly listing the motivation, goals, and non-goals of
 this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can variantally provide links to [experience reports] to
+motivation section can optionally provide links to [experience reports] to
 demonstrate the interest in a KEP within the wider Kubernetes community.
 
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
@@ -314,7 +314,8 @@ metadata:
 spec:
   ...
   concurrentAdmission:
-    onSuccess: UpgradeAboveCurrent
+    migrationConstraints:
+      mode: UpgradeOnly
     explicitVariants:
       - name: "reservation"
         allowedResourceFlavors: ["Reservation"]
@@ -358,13 +359,14 @@ metadata:
 spec:
   ...
   concurrentAdmission:
-    onSuccess: UpgradeAboveCurrent
+    migrationConstraints:
+      mode: UpgradeOnly
     explicitVariants:
       - name: "reservation"
         allowedResourceFlavors: ["Reservation"]
+        deleteDelaySeconds: 86400
       - name: "on-demand"
         allowedResourceFlavors: ["On-Demand"]
-        deleteDelaySeconds: 86400
 ```
 
 #### Story 7: Workload with multiple PodSets
@@ -403,12 +405,13 @@ metadata:
 spec:
   ...
   concurrentAdmission:
-    onSuccess: UpgradeAboveCurrent
+    migrationConstraints:
+      mode: UpgradeOnly
     explicitVariants:
-      - name: "reservation"
-        allowedResourceFlavors: ["Reservation, Default-CPU"]
-      - name: "on-demand"
-        allowedResourceFlavors: ["On-Demand, Default-CPU"]
+      - name: "reservation-flavor"
+        allowedResourceFlavors: ["Reservation", "Default-CPU"]
+      - name: "on-demand-flavor"
+        allowedResourceFlavors: ["On-Demand", "Default-CPU"]
 ```
 
 <!--
@@ -619,7 +622,7 @@ be used for sorting sibling Variants. The value of this dimension would be fille
 Thanks to that we also have a guarantee that sibling Variants are always adjacent in the heap, which
 results in Kueue scheduler picking sibling Variants one after the another, without any other Workloads in between.
 
-### Notes/Constraints/Caveats (Variantal)
+### Notes/Constraints/Caveats (Optional)
 
 #### Number of Variants
 
@@ -648,8 +651,8 @@ For Alpha and Beta version of this feature we don't plan to support `StrictFIFO`
 ### FlavorFungibility Misinterpretation
 
 In the first iteration of the feature we don't plan to integrate with the `FlavorFungibility` on the
-inter-Variants level. It means that the `OnSuccessPolicy` is binary - if an Variant has been admitted or not.
-It doesn't take into account if preemption or borrowing was necessary to admit an Variant. The preference order of Variants
+inter-Variants level. It means that the `OnSuccessPolicy` is binary - if a Variant has been admitted or not.
+It doesn't take into account if preemption or borrowing was necessary to admit a Variant. The preference order of Variants
 is purely based on ResourceFlavors used, and user doesn't have capabilities to express what to do if e.g. two Variants can be
 admitted, but the more preferable one requires preemption. The more preferable one will always be chosen.
 
