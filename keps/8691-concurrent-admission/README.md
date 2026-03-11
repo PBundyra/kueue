@@ -179,7 +179,6 @@ A parent Workload is excluded from the scheduling logic in Kueue. It acts as an 
 
 A Variant Workload is a cloned view of its Parent with some additional scheduling constraints,
 in particular it can be scheduled on a limited number of ResourceFlavors.
-
 Apart from that a Variant Workload acts almost identically as a "regular" Workload regarding scheduling, quota accounting and other core features.
 
 <!--
@@ -318,9 +317,9 @@ spec:
       mode: UpgradeOnly
     explicitVariants:
       - name: "reservation"
-        allowedResourceFlavors: ["Reservation"]
+        allowedResourceFlavors: ["reservation"]
       - name: "on-demand"
-        allowedResourceFlavors: ["On-Demand"]
+        allowedResourceFlavors: ["on-demand"]
         createDelaySeconds: 7200
 ```
 
@@ -363,10 +362,10 @@ spec:
       mode: UpgradeOnly
     explicitVariants:
       - name: "reservation"
-        allowedResourceFlavors: ["Reservation"]
-        deleteDelaySeconds: 86400
+        allowedResourceFlavors: ["reservation"]
+        maxDeleteDelaySeconds: 86400
       - name: "on-demand"
-        allowedResourceFlavors: ["On-Demand"]
+        allowedResourceFlavors: ["on-demand"]
 ```
 
 #### Story 7: Workload with multiple PodSets
@@ -409,9 +408,9 @@ spec:
       mode: UpgradeOnly
     explicitVariants:
       - name: "reservation-flavor"
-        allowedResourceFlavors: ["Reservation", "Default-CPU"]
+        allowedResourceFlavors: ["reservation", "default-cpu"]
       - name: "on-demand-flavor"
-        allowedResourceFlavors: ["On-Demand", "Default-CPU"]
+        allowedResourceFlavors: ["on-demand", "default-cpu"]
 ```
 
 <!--
