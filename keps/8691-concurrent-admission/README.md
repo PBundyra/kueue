@@ -650,7 +650,7 @@ For Alpha and Beta version of this feature we don't plan to support `StrictFIFO`
 ### FlavorFungibility Misinterpretation
 
 In the first iteration of the feature we don't plan to integrate with the `FlavorFungibility` on the
-inter-Variants level. It means that the `OnSuccessPolicy` is binary - if a Variant has been admitted or not.
+inter-Variants level. It means that the decision about migrating to a different flavor is binary - if a Variant has been admitted or not.
 It doesn't take into account if preemption or borrowing was necessary to admit a Variant. The preference order of Variants
 is purely based on ResourceFlavors used, and user doesn't have capabilities to express what to do if e.g. two Variants can be
 admitted, but the more preferable one requires preemption. The more preferable one will always be chosen.
