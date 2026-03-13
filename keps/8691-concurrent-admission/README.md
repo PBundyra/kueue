@@ -494,8 +494,7 @@ Besides that a Parent Workload has the boolean `kueue.x-k8s.io/parent-variant` l
 "regular" Workloads, in a cluster. Parent Workloads have this label present and set to `true`.
 
 This way of distinguishing Variants, Parents, and "regular" Workloads is introduced in the Alpha, and will be
-revisited when graduating to 
-.
+revisited when graduating to Beta.
 
 #### Naming Convention
 
@@ -782,9 +781,11 @@ After the implementation PR is merged, add the names of the tests here.
 - Reconsider support for `StrictFIFO` queueing strategy.
 - Support `WorkloadSlice`
 
-Revisit the [`WorkloadStatus`](#workload-status) changes
+Revisit the [`WorkloadStatus`](#workload-status) changes.
 
 Revisit `PreemptionGates` API to avoid excessive number of preemptions for a single job.
+
+Revisit support for ClusterQueues with more than 1 `ResourceGroup`.
 
 #### GA
 
