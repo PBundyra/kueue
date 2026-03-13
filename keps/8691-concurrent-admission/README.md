@@ -783,8 +783,6 @@ After the implementation PR is merged, add the names of the tests here.
 
 Revisit the [`WorkloadStatus`](#workload-status) changes.
 
-Revisit `PreemptionGates` API to avoid excessive number of preemptions for a single job.
-
 Revisit support for ClusterQueues with more than 1 `ResourceGroup`.
 
 #### GA
