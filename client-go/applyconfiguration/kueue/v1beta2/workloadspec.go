@@ -61,6 +61,8 @@ type WorkloadSpecApplyConfiguration struct {
 	// can trigger preemptions.
 	// The gates are closed by default.
 	PreemptionGates []PreemptionGateApplyConfiguration `json:"preemptionGates,omitempty"`
+	// AdmissionConstraints defines the constraints of Workload's admission
+	AdmissionConstraints *AdmissionConstraintsApplyConfiguration `json:"admissionConstraints,omitempty"`
 }
 
 // WorkloadSpecApplyConfiguration constructs a declarative configuration of the WorkloadSpec type for use with
@@ -132,5 +134,13 @@ func (b *WorkloadSpecApplyConfiguration) WithPreemptionGates(values ...*Preempti
 		}
 		b.PreemptionGates = append(b.PreemptionGates, *values[i])
 	}
+	return b
+}
+
+// WithAdmissionConstraints sets the AdmissionConstraints field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the AdmissionConstraints field is set to the value of the last call.
+func (b *WorkloadSpecApplyConfiguration) WithAdmissionConstraints(value *AdmissionConstraintsApplyConfiguration) *WorkloadSpecApplyConfiguration {
+	b.AdmissionConstraints = value
 	return b
 }

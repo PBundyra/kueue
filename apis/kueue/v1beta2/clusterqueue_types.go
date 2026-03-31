@@ -142,6 +142,10 @@ type ClusterQueueSpec struct {
 	// admissionScope indicates whether ClusterQueue uses the Admission Fair Sharing
 	// +optional
 	AdmissionScope *AdmissionScope `json:"admissionScope,omitempty"`
+
+	// concurrentAdmission defines the policy for concurrent attempts.
+	// +optional
+	ConcurrentAdmission *ConcurrentAdmission `json:"concurrentAdmission,omitempty"`
 }
 
 // AdmissionChecksStrategy defines a strategy for a AdmissionCheck.
@@ -181,6 +185,36 @@ const (
 	// however older workloads that can't be admitted will not block
 	// admitting newer workloads that fit existing quota.
 	BestEffortFIFO QueueingStrategy = "BestEffortFIFO"
+)
+
+type ConcurrentAdmission struct {
+	// migrationConstraints defines the constraints of Variants migration
+	//
+	// +required
+	MigrationConstraints ConcurrentAdmissionMigrationConstraints `json:"migrationConstraints"`
+}
+
+type ConcurrentAdmissionMigrationConstraints struct {
+	// mode defines the mode of Workload's migration.
+	//
+	// +required
+	Mode ConcurrentAdmissionMigrationMode `json:"mode"`
+
+	// minTargetFlavor defines the minimal flavor a Workload can migrate to.
+	// The order is based on the order of flavors in ClusterQueue.
+	// It can only be used if the Mode is `UpgradeOnly` and `ExplicitVariants` is not specified.
+	// If the Mode is `UpgradeOnly` and MinTargetFlavor is not specified, then there's
+	// no constraints on what flavors a Workload can migrate to.
+	//
+	// +optional
+	MinTargetFlavor *ResourceFlavorReference `json:"minTargetFlavor,omitempty"`
+}
+
+type ConcurrentAdmissionMigrationMode string
+
+const (
+	// Allow upgrades
+	UpgradeOnly ConcurrentAdmissionMigrationMode = "UpgradeOnly"
 )
 
 // +kubebuilder:validation:XValidation:rule="self.flavors.all(x, size(x.resources) == size(self.coveredResources))", message="flavors must have the same number of resources as the coveredResources"

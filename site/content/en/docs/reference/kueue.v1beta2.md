@@ -668,6 +668,31 @@ If empty, the AdmissionCheck will run for all workloads submitted to the Cluster
 </tbody>
 </table>
 
+## `AdmissionConstraints`     {#kueue-x-k8s-io-v1beta2-AdmissionConstraints}
+    
+
+**Appears in:**
+
+- [WorkloadSpec](#kueue-x-k8s-io-v1beta2-WorkloadSpec)
+
+
+
+<table class="table">
+<thead><tr><th width="30%">Field</th><th>Description</th></tr></thead>
+<tbody>
+    
+  
+<tr><td><code>allowedResourceFlavors</code><br/>
+<a href="#kueue-x-k8s-io-v1beta2-AllowedResourceFlavor"><code>[]AllowedResourceFlavor</code></a>
+</td>
+<td>
+   <p>allowedResourceFlavors defines the list of ResourceFlavors a Workload can admit to.
+If not specified, a Workload can admit to any ResourceFlavor.</p>
+</td>
+</tr>
+</tbody>
+</table>
+
 ## `AdmissionMode`     {#kueue-x-k8s-io-v1beta2-AdmissionMode}
     
 (Alias of `string`)
@@ -704,6 +729,30 @@ in the AdmissionScope. Possible values are:</p>
 <li>UsageBasedAdmissionFairSharing</li>
 <li>NoAdmissionFairSharing</li>
 </ul>
+</td>
+</tr>
+</tbody>
+</table>
+
+## `AllowedResourceFlavor`     {#kueue-x-k8s-io-v1beta2-AllowedResourceFlavor}
+    
+
+**Appears in:**
+
+- [AdmissionConstraints](#kueue-x-k8s-io-v1beta2-AdmissionConstraints)
+
+
+
+<table class="table">
+<thead><tr><th width="30%">Field</th><th>Description</th></tr></thead>
+<tbody>
+    
+  
+<tr><td><code>name</code> <B>[Required]</B><br/>
+<a href="#kueue-x-k8s-io-v1beta2-ResourceFlavorReference"><code>ResourceFlavorReference</code></a>
+</td>
+<td>
+   <p>name defines the name of ResourceFlavor.</p>
 </td>
 </tr>
 </tbody>
@@ -1029,6 +1078,13 @@ if FairSharing is enabled in the Kueue configuration.</p>
    <p>admissionScope indicates whether ClusterQueue uses the Admission Fair Sharing</p>
 </td>
 </tr>
+<tr><td><code>concurrentAdmission</code><br/>
+<a href="#kueue-x-k8s-io-v1beta2-ConcurrentAdmission"><code>ConcurrentAdmission</code></a>
+</td>
+<td>
+   <p>concurrentAdmission defines the policy for concurrent attempts.</p>
+</td>
+</tr>
 </tbody>
 </table>
 
@@ -1256,6 +1312,77 @@ The is recorded only when Fair Sharing is enabled in the Kueue configuration.</p
 </tr>
 </tbody>
 </table>
+
+## `ConcurrentAdmission`     {#kueue-x-k8s-io-v1beta2-ConcurrentAdmission}
+    
+
+**Appears in:**
+
+- [ClusterQueueSpec](#kueue-x-k8s-io-v1beta2-ClusterQueueSpec)
+
+
+
+<table class="table">
+<thead><tr><th width="30%">Field</th><th>Description</th></tr></thead>
+<tbody>
+    
+  
+<tr><td><code>migrationConstraints</code> <B>[Required]</B><br/>
+<a href="#kueue-x-k8s-io-v1beta2-ConcurrentAdmissionMigrationConstraints"><code>ConcurrentAdmissionMigrationConstraints</code></a>
+</td>
+<td>
+   <p>migrationConstraints defines the constraints of Variants migration</p>
+</td>
+</tr>
+</tbody>
+</table>
+
+## `ConcurrentAdmissionMigrationConstraints`     {#kueue-x-k8s-io-v1beta2-ConcurrentAdmissionMigrationConstraints}
+    
+
+**Appears in:**
+
+- [ConcurrentAdmission](#kueue-x-k8s-io-v1beta2-ConcurrentAdmission)
+
+
+
+<table class="table">
+<thead><tr><th width="30%">Field</th><th>Description</th></tr></thead>
+<tbody>
+    
+  
+<tr><td><code>mode</code> <B>[Required]</B><br/>
+<a href="#kueue-x-k8s-io-v1beta2-ConcurrentAdmissionMigrationMode"><code>ConcurrentAdmissionMigrationMode</code></a>
+</td>
+<td>
+   <p>mode defines the mode of Workload's migration.</p>
+</td>
+</tr>
+<tr><td><code>minTargetFlavor</code><br/>
+<a href="#kueue-x-k8s-io-v1beta2-ResourceFlavorReference"><code>ResourceFlavorReference</code></a>
+</td>
+<td>
+   <p>minTargetFlavor defines the minimal flavor a Workload can migrate to.
+The order is based on the order of flavors in ClusterQueue.
+It can only be used if the Mode is <code>UpgradeOnly</code> and <code>ExplicitVariants</code> is not specified.
+If the Mode is <code>UpgradeOnly</code> and MinTargetFlavor is not specified, then there's
+no constraints on what flavors a Workload can migrate to.</p>
+</td>
+</tr>
+</tbody>
+</table>
+
+## `ConcurrentAdmissionMigrationMode`     {#kueue-x-k8s-io-v1beta2-ConcurrentAdmissionMigrationMode}
+    
+(Alias of `string`)
+
+**Appears in:**
+
+- [ConcurrentAdmissionMigrationConstraints](#kueue-x-k8s-io-v1beta2-ConcurrentAdmissionMigrationConstraints)
+
+
+
+
 
 ## `DelayedTopologyRequestState`     {#kueue-x-k8s-io-v1beta2-DelayedTopologyRequestState}
     
@@ -2912,6 +3039,10 @@ this time would be reset to null.</p>
 
 - [AdmissionCheckStrategyRule](#kueue-x-k8s-io-v1beta2-AdmissionCheckStrategyRule)
 
+- [AllowedResourceFlavor](#kueue-x-k8s-io-v1beta2-AllowedResourceFlavor)
+
+- [ConcurrentAdmissionMigrationConstraints](#kueue-x-k8s-io-v1beta2-ConcurrentAdmissionMigrationConstraints)
+
 - [FlavorQuotas](#kueue-x-k8s-io-v1beta2-FlavorQuotas)
 
 - [FlavorUsage](#kueue-x-k8s-io-v1beta2-FlavorUsage)
@@ -3591,6 +3722,13 @@ the workload can be admitted before it's automatically deactivated.</p>
    <p>preemptionGates is a list of gates governing whether the workload
 can trigger preemptions.
 The gates are closed by default.</p>
+</td>
+</tr>
+<tr><td><code>admissionConstraints</code><br/>
+<a href="#kueue-x-k8s-io-v1beta2-AdmissionConstraints"><code>AdmissionConstraints</code></a>
+</td>
+<td>
+   <p>AdmissionConstraints defines the constraints of Workload's admission</p>
 </td>
 </tr>
 </tbody>
