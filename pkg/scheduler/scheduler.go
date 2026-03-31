@@ -691,6 +691,8 @@ func (s *Scheduler) admit(ctx context.Context, e *entry, cq *schdcache.ClusterQu
 	}
 
 	consideredStr := flavorassigner.FormatFlavorAssignmentAttemptsForEvents(e.assignment)
+
+
 	cacheWl, err := s.assumeWorkload(log, e, cq, admission)
 	if err != nil {
 		return err
@@ -977,3 +979,4 @@ func (s *Scheduler) updateEntryPenalty(log logr.Logger, e *entry, op usageOp) {
 		log.V(3).Info("Entry penalty subtracted from localQueue", "localQueue", lqObjRef, "penalty", penalty)
 	}
 }
+

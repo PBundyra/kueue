@@ -4434,3 +4434,49 @@ func TestAssignment_RequiresBorrowing(t *testing.T) {
 		})
 	}
 }
+
+func TestIsFlavorAllowed(t *testing.T) {
+	cases := map[string]struct {
+		allowedFlavors []kueue.AllowedResourceFlavor
+		flavor         kueue.ResourceFlavorReference
+		want           bool
+	}{
+		"no constraints allows all": {
+			allowedFlavors: nil,
+			flavor:         "one",
+			want:           true,
+		},
+		"empty constraints allows all": {
+			allowedFlavors: []kueue.AllowedResourceFlavor{},
+			flavor:         "one",
+			want:           true,
+		},
+		"flavor matches constraint": {
+			allowedFlavors: []kueue.AllowedResourceFlavor{{Name: "one"}, {Name: "two"}},
+			flavor:         "one",
+			want:           true,
+		},
+		"flavor does not match constraint": {
+			allowedFlavors: []kueue.AllowedResourceFlavor{{Name: "one"}, {Name: "two"}},
+			flavor:         "three",
+			want:           false,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			wl := workload.NewInfo(&kueue.Workload{
+				Spec: kueue.WorkloadSpec{
+					AdmissionConstraints: &kueue.AdmissionConstraints{
+						AllowedResourceFlavors: tc.allowedFlavors,
+					},
+				},
+			})
+			fa := &FlavorAssigner{wl: wl}
+			got := fa.isFlavorAllowed(tc.flavor)
+			if got != tc.want {
+				t.Errorf("isFlavorAllowed() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

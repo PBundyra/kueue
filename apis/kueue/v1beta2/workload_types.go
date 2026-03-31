@@ -84,6 +84,26 @@ type WorkloadSpec struct {
 	// +kubebuilder:validation:MaxItems=8
 	// +optional
 	PreemptionGates []PreemptionGate `json:"preemptionGates,omitempty"`
+
+	// AdmissionConstraints defines the constraints of Workload's admission
+	// +optional
+	AdmissionConstraints *AdmissionConstraints `json:"admissionConstraints,omitempty"`
+}
+
+type AdmissionConstraints struct {
+	// allowedResourceFlavors defines the list of ResourceFlavors a Workload can admit to.
+	// If not specified, a Workload can admit to any ResourceFlavor.
+	//
+	// +optional
+	// +listType=set
+	AllowedResourceFlavors []AllowedResourceFlavor `json:"allowedResourceFlavors,omitempty"`
+}
+
+type AllowedResourceFlavor struct {
+	// name defines the name of ResourceFlavor.
+	//
+	// +required
+	Name ResourceFlavorReference `json:"name"`
 }
 
 // PriorityClassGroup indicates the API group of the PriorityClass object.

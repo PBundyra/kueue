@@ -1479,6 +1479,23 @@ func (r *JobReconciler) prepareWorkload(ctx context.Context, job GenericJob, wl 
 		return prepareWorkloadSlice(ctx, r.client, job, wl)
 	}
 	wl.Spec.Active = active
+
+	queueName := QueueName(job)
+	if queueName != "" {
+		var lq kueue.LocalQueue
+		if err := r.client.Get(ctx, client.ObjectKey{Namespace: wl.Namespace, Name: string(queueName)}, &lq); err == nil {
+			var cq kueue.ClusterQueue
+			if err := r.client.Get(ctx, client.ObjectKey{Name: string(lq.Spec.ClusterQueue)}, &cq); err == nil {
+				if cq.Spec.ConcurrentAdmission != nil {
+					if wl.Labels == nil {
+						wl.Labels = make(map[string]string)
+					}
+					wl.Labels["kueue.x-k8s.io/parent-variant"] = "true"
+				}
+			}
+		}
+	}
+
 	return nil
 }
 

@@ -353,9 +353,13 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 
 		if workload.IsAdmissible(&wl) {
-			if err := r.queues.AddOrUpdateWorkload(log, wl.DeepCopy(), queueOptions...); err != nil {
-				log.V(2).Info("Failed to add DRA workload to queue", "error", err)
-				return ctrl.Result{}, err
+			if isParentWorkload(&wl) {
+				log.V(3).Info("Skipping push of parent workload to the heap")
+			} else {
+				if err := r.queues.AddOrUpdateWorkload(log, wl.DeepCopy(), queueOptions...); err != nil {
+					log.V(2).Info("Failed to add DRA workload to queue", "error", err)
+					return ctrl.Result{}, err
+				}
 			}
 		} else {
 			if !r.cache.AddOrUpdateWorkload(log, wl.DeepCopy()) {
@@ -393,9 +397,13 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 					return ctrl.Result{}, client.IgnoreNotFound(err)
 				}
 
-				if err := r.queues.AddOrUpdateWorkload(log, wl.DeepCopy()); err != nil {
-					log.V(2).Info("failed to put the workload back into queue", "error", err)
-					return ctrl.Result{}, err
+				if isParentWorkload(&wl) {
+					log.V(3).Info("Skipping push of parent workload to the heap after backoff")
+				} else {
+					if err := r.queues.AddOrUpdateWorkload(log, wl.DeepCopy()); err != nil {
+						log.V(2).Info("failed to put the workload back into queue", "error", err)
+						return ctrl.Result{}, err
+					}
 				}
 
 				log.V(3).Info("Workload requeued after backoff")
@@ -1019,8 +1027,12 @@ func (r *WorkloadReconciler) Create(e event.TypedCreateEvent[*kueue.Workload]) b
 	}
 
 	if workload.IsAdmissible(e.Object) {
-		if err := r.queues.AddOrUpdateWorkload(log, wlCopy); err != nil {
-			log.V(2).Info("ignored an error for now", "error", err)
+		if isParentWorkload(wlCopy) {
+			log.V(3).Info("Skipping push of parent workload to the heap on create")
+		} else {
+			if err := r.queues.AddOrUpdateWorkload(log, wlCopy); err != nil {
+				log.V(2).Info("ignored an error for now", "error", err)
+			}
 		}
 		return true
 	}
@@ -1141,8 +1153,12 @@ func (r *WorkloadReconciler) Update(e event.TypedUpdateEvent[*kueue.Workload]) b
 				if dra.NeedsDRAReconcile(e.ObjectNew) {
 					log.V(2).Info("Skipping immediate requeue for DRA workload - handled in Reconcile")
 				} else {
-					if err := r.queues.AddOrUpdateWorkloadWithoutLock(log, wlCopy); err != nil {
-						log.V(2).Info("ignored an error for now", "error", err)
+					if isParentWorkload(wlCopy) {
+						log.V(3).Info("Skipping push of parent workload to the heap on update without lock")
+					} else {
+						if err := r.queues.AddOrUpdateWorkloadWithoutLock(log, wlCopy); err != nil {
+							log.V(2).Info("ignored an error for now", "error", err)
+						}
 					}
 					r.queues.DeleteSecondPassWithoutLock(wlKey)
 				}
@@ -1357,8 +1373,12 @@ func (h *resourceUpdatesHandler) queueReconcileForPending(ctx context.Context, q
 		}
 
 		if workload.IsAdmissible(wlCopy) {
-			if err = h.r.queues.AddOrUpdateWorkload(log, wlCopy); err != nil {
-				log.V(2).Info("ignored an error for now", "error", err)
+			if isParentWorkload(wlCopy) {
+				log.V(3).Info("Skipping push of parent workload to the heap in queue handler")
+			} else {
+				if err = h.r.queues.AddOrUpdateWorkload(log, wlCopy); err != nil {
+					log.V(2).Info("ignored an error for now", "error", err)
+				}
 			}
 		}
 	}
@@ -1497,3 +1517,12 @@ func (h *draEventHandler) Generic(ctx context.Context, e event.TypedGenericEvent
 func (r *WorkloadReconciler) GetDRAReconcileChannel() chan<- event.TypedGenericEvent[*kueue.Workload] {
 	return r.draReconcileChannel
 }
+
+func isParentWorkload(wl *kueue.Workload) bool {
+	if wl == nil || wl.Labels == nil {
+		return false
+	}
+	return wl.Labels["kueue.x-k8s.io/parent-variant"] == "true"
+}
+
+

@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/record"
@@ -123,9 +124,68 @@ func (t *Target) GetObject() client.Object {
 	return t.WorkloadInfo.Obj
 }
 
-// GetTargets returns the list of workloads that should be evicted in
-// order to make room for wl.
+
 func (p *Preemptor) GetTargets(log logr.Logger, wl workload.Info, assignment flavorassigner.Assignment, snapshot *schdcache.Snapshot) []*Target {
+	targets := p.getTargetsInfo(log, wl, assignment, snapshot)
+
+	cq := snapshot.ClusterQueue(wl.ClusterQueue)
+	if parentUR := metav1.GetControllerOf(wl.Obj); parentUR != nil && parentUR.Kind == "Workload" {
+		for _, wInfo := range cq.Workloads {
+			if wInfo.Obj.UID == wl.Obj.UID {
+				continue
+			}
+			if wInfo.Obj.Status.Admission == nil {
+				continue
+			}
+			siblingUR := metav1.GetControllerOf(wInfo.Obj)
+			if siblingUR != nil && siblingUR.UID == parentUR.UID {
+				if isMoreFavorable(cq, wl.Obj, wInfo.Obj) {
+					targets = append(targets, &Target{
+						WorkloadInfo: wInfo,
+						Reason:       "VariantEvicted",
+						WorkloadCq:   snapshot.ClusterQueue(wInfo.ClusterQueue),
+					})
+				}
+			}
+		}
+	}
+
+	return targets
+}
+
+func isMoreFavorable(cq *schdcache.ClusterQueueSnapshot, a, b *kueue.Workload) bool {
+	flvA := getAllowedFlavor(a)
+	flvB := getAllowedFlavor(b)
+	if flvA == "" || flvB == "" {
+		return false
+	}
+	idxA := getFlavorIndexInCQ(flvA, cq)
+	idxB := getFlavorIndexInCQ(flvB, cq)
+	if idxA == -1 || idxB == -1 {
+		return false
+	}
+	return idxA < idxB
+}
+
+func getAllowedFlavor(w *kueue.Workload) kueue.ResourceFlavorReference {
+	if w.Spec.AdmissionConstraints != nil && len(w.Spec.AdmissionConstraints.AllowedResourceFlavors) > 0 {
+		return w.Spec.AdmissionConstraints.AllowedResourceFlavors[0].Name
+	}
+	return ""
+}
+
+func getFlavorIndexInCQ(fName kueue.ResourceFlavorReference, cq *schdcache.ClusterQueueSnapshot) int {
+	for idx, rg := range cq.ResourceGroups {
+		for _, f := range rg.Flavors {
+			if f == fName {
+				return idx
+			}
+		}
+	}
+	return -1
+}
+
+func (p *Preemptor) getTargetsInfo(log logr.Logger, wl workload.Info, assignment flavorassigner.Assignment, snapshot *schdcache.Snapshot) []*Target {
 	cq := snapshot.ClusterQueue(wl.ClusterQueue)
 	var tasRequests schdcache.WorkloadTASRequests
 	if features.Enabled(features.TopologyAwareScheduling) {
@@ -154,6 +214,7 @@ func (p *Preemptor) getTargets(preemptionCtx *preemptionCtx) []*Target {
 }
 
 var HumanReadablePreemptionReasons = map[string]string{
+	"VariantEvicted":                           "a more favorable variant being admitted",
 	kueue.InClusterQueueReason:                "prioritization in the ClusterQueue",
 	kueue.InCohortReclamationReason:           "reclamation within the cohort",
 	kueue.InCohortFairSharingReason:           "Fair Sharing within the cohort",
@@ -209,8 +270,12 @@ func (p *Preemptor) IssuePreemptions(ctx context.Context, cache *schdcache.Cache
 		message := preemptionMessage(preemptor.Obj, target.Reason, preemptorPath, preempteePath)
 		wlCopy := target.WorkloadInfo.Obj.DeepCopy()
 		exposeLqMetrics := cache.ShouldExposeLocalQueueMetricsForWorkload(log, wlCopy)
+		evictReason := kueue.WorkloadEvictedByPreemption
+		if target.Reason == "VariantEvicted" {
+			evictReason = "VariantEvicted"
+		}
 		err := workload.Evict(
-			ctx, p.client, p.recorder, wlCopy, kueue.WorkloadEvictedByPreemption, message, "", p.clock, exposeLqMetrics, p.roleTracker, p.customLabels,
+			ctx, p.client, p.recorder, wlCopy, evictReason, message, "", p.clock, exposeLqMetrics, p.roleTracker, p.customLabels,
 			workload.WithCustomPrepare(func(wl *kueue.Workload) {
 				workload.SetPreemptedCondition(wl, p.clock.Now(), target.Reason, message)
 			}),
