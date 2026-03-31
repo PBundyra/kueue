@@ -1524,5 +1524,3 @@ func isParentWorkload(wl *kueue.Workload) bool {
 	}
 	return wl.Labels["kueue.x-k8s.io/parent-variant"] == "true"
 }
-
-

@@ -124,7 +124,6 @@ func (t *Target) GetObject() client.Object {
 	return t.WorkloadInfo.Obj
 }
 
-
 func (p *Preemptor) GetTargets(log logr.Logger, wl workload.Info, assignment flavorassigner.Assignment, snapshot *schdcache.Snapshot) []*Target {
 	targets := p.getTargetsInfo(log, wl, assignment, snapshot)
 
@@ -214,7 +213,7 @@ func (p *Preemptor) getTargets(preemptionCtx *preemptionCtx) []*Target {
 }
 
 var HumanReadablePreemptionReasons = map[string]string{
-	"VariantEvicted":                           "a more favorable variant being admitted",
+	"VariantEvicted":                          "a more favorable variant being admitted",
 	kueue.InClusterQueueReason:                "prioritization in the ClusterQueue",
 	kueue.InCohortReclamationReason:           "reclamation within the cohort",
 	kueue.InCohortFairSharingReason:           "Fair Sharing within the cohort",
