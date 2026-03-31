@@ -148,7 +148,7 @@ update-helm: compile-crd-manifests yq yaml-processor
 	$(YAML_PROCESSOR) -zap-log-level=$(YAML_PROCESSOR_LOG_LEVEL) hack/processing-plan.yaml
 
 .PHONY: generate
-generate: generate-mocks generate-apiref generate-code generate-kueuectl-docs generate-helm-docs generate-metrics-tables generate-featuregates
+generate: generate-apiref generate-code generate-kueuectl-docs generate-helm-docs generate-metrics-tables generate-featuregates
 
 .PHONY: generate-code
 generate-code: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations and client-go libraries.

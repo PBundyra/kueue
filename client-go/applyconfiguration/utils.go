@@ -196,8 +196,6 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &kueuev1beta2.AdmissionConstraintsApplyConfiguration{}
 	case v1beta2.SchemeGroupVersion.WithKind("AdmissionScope"):
 		return &kueuev1beta2.AdmissionScopeApplyConfiguration{}
-	case v1beta2.SchemeGroupVersion.WithKind("AllowedResourceFlavor"):
-		return &kueuev1beta2.AllowedResourceFlavorApplyConfiguration{}
 	case v1beta2.SchemeGroupVersion.WithKind("BorrowWithinCohort"):
 		return &kueuev1beta2.BorrowWithinCohortApplyConfiguration{}
 	case v1beta2.SchemeGroupVersion.WithKind("ClusterProfileReference"):

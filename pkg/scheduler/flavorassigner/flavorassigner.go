@@ -777,6 +777,18 @@ func (a *Assignment) findOldPodSetRequest(psName kueue.PodSetReference, resource
 	return 0
 }
 
+func (a *FlavorAssigner) isFlavorAllowed(fName kueue.ResourceFlavorReference) bool {
+	if a.wl.Obj.Spec.AdmissionConstraints == nil || len(a.wl.Obj.Spec.AdmissionConstraints.AllowedResourceFlavors) == 0 {
+		return true
+	}
+	for _, af := range a.wl.Obj.Spec.AdmissionConstraints.AllowedResourceFlavors {
+		if af == fName {
+			return true
+		}
+	}
+	return false
+}
+
 // findFlavorForPodSets finds the flavor which can satisfy all the PodSet requests
 // for all resources in the same group as resName.
 // Returns the chosen flavor, along with the information about resources that need to be borrowed
@@ -818,6 +830,9 @@ func (a *FlavorAssigner) findFlavorForPodSets(
 	for ; idx < len(resourceGroup.Flavors); idx++ {
 		attemptedFlavorIdx = idx
 		fName := resourceGroup.Flavors[idx]
+		if !a.isFlavorAllowed(fName) {
+			continue
+		}
 
 		if flavorStatus := a.checkFlavorForPodSets(log, fName, psIDs, podSets, selectors, resourceGroup); !flavorStatus.IsFit() {
 			status.reasons = append(status.reasons, flavorStatus.reasons...)

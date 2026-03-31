@@ -96,15 +96,9 @@ type AdmissionConstraints struct {
 	//
 	// +optional
 	// +listType=set
-	AllowedResourceFlavors []AllowedResourceFlavor `json:"allowedResourceFlavors,omitempty"`
+	AllowedResourceFlavors []ResourceFlavorReference `json:"allowedResourceFlavors,omitempty"`
 }
 
-type AllowedResourceFlavor struct {
-	// name defines the name of ResourceFlavor.
-	//
-	// +required
-	Name ResourceFlavorReference `json:"name"`
-}
 
 // PriorityClassGroup indicates the API group of the PriorityClass object.
 //

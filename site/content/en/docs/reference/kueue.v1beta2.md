@@ -683,7 +683,7 @@ If empty, the AdmissionCheck will run for all workloads submitted to the Cluster
     
   
 <tr><td><code>allowedResourceFlavors</code><br/>
-<a href="#kueue-x-k8s-io-v1beta2-AllowedResourceFlavor"><code>[]AllowedResourceFlavor</code></a>
+<a href="#kueue-x-k8s-io-v1beta2-ResourceFlavorReference"><code>[]ResourceFlavorReference</code></a>
 </td>
 <td>
    <p>allowedResourceFlavors defines the list of ResourceFlavors a Workload can admit to.
@@ -729,30 +729,6 @@ in the AdmissionScope. Possible values are:</p>
 <li>UsageBasedAdmissionFairSharing</li>
 <li>NoAdmissionFairSharing</li>
 </ul>
-</td>
-</tr>
-</tbody>
-</table>
-
-## `AllowedResourceFlavor`     {#kueue-x-k8s-io-v1beta2-AllowedResourceFlavor}
-    
-
-**Appears in:**
-
-- [AdmissionConstraints](#kueue-x-k8s-io-v1beta2-AdmissionConstraints)
-
-
-
-<table class="table">
-<thead><tr><th width="30%">Field</th><th>Description</th></tr></thead>
-<tbody>
-    
-  
-<tr><td><code>name</code> <B>[Required]</B><br/>
-<a href="#kueue-x-k8s-io-v1beta2-ResourceFlavorReference"><code>ResourceFlavorReference</code></a>
-</td>
-<td>
-   <p>name defines the name of ResourceFlavor.</p>
 </td>
 </tr>
 </tbody>
@@ -3039,7 +3015,7 @@ this time would be reset to null.</p>
 
 - [AdmissionCheckStrategyRule](#kueue-x-k8s-io-v1beta2-AdmissionCheckStrategyRule)
 
-- [AllowedResourceFlavor](#kueue-x-k8s-io-v1beta2-AllowedResourceFlavor)
+- [AdmissionConstraints](#kueue-x-k8s-io-v1beta2-AdmissionConstraints)
 
 - [ConcurrentAdmissionMigrationConstraints](#kueue-x-k8s-io-v1beta2-ConcurrentAdmissionMigrationConstraints)
 

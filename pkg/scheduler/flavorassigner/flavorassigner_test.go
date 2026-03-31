@@ -4538,3 +4538,93 @@ func TestWorkloadsTopologyRequests_ZeroCountPodSetSkipped(t *testing.T) {
 		})
 	}
 }
+func TestAssignFlavorsWithAllowedFlavors(t *testing.T) {
+	resourceFlavors := map[kueue.ResourceFlavorReference]*kueue.ResourceFlavor{
+		"f1": utiltestingapi.MakeResourceFlavor("f1").Obj(),
+		"f2": utiltestingapi.MakeResourceFlavor("f2").Obj(),
+	}
+
+	cq := *utiltestingapi.MakeClusterQueue("cq").
+		ResourceGroup(
+			*utiltestingapi.MakeFlavorQuotas("f1").Resource(corev1.ResourceCPU, "10").Obj(),
+			*utiltestingapi.MakeFlavorQuotas("f2").Resource(corev1.ResourceCPU, "10").Obj(),
+		).Obj()
+
+	tests := map[string]struct {
+		allowedFlavors []string
+		wantFlavor     kueue.ResourceFlavorReference
+		wantRepMode    FlavorAssignmentMode
+	}{
+		// "allow only f2": {
+		// 	allowedFlavors: []string{"f2"},
+		// 	wantFlavor:     "f2",
+		// 	wantRepMode:    Fit,
+		// },
+		// "allow only f1": {
+		// 	allowedFlavors: []string{"f1"},
+		// 	wantFlavor:     "f1",
+		// 	wantRepMode:    Fit,
+		// },
+		// "allow both": {
+		// 	allowedFlavors: []string{"f1", "f2"},
+		// 	wantFlavor:     "f1", // first fit
+		// 	wantRepMode:    Fit,
+		// },
+		// "no constraints": {
+		// 	allowedFlavors: nil,
+		// 	wantFlavor:     "f1",
+		// 	wantRepMode:    Fit,
+		// },
+		"allow non-existent": {
+			allowedFlavors: []string{"non-existent"},
+			wantFlavor:     "",
+			wantRepMode:    NoFit,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			wl := utiltestingapi.MakeWorkload("wl", "ns").
+				PodSets(*utiltestingapi.MakePodSet("main", 1).Request(corev1.ResourceCPU, "1").Obj()).
+				Obj()
+
+			if tc.allowedFlavors != nil {
+				wl.Spec.AdmissionConstraints = &kueue.AdmissionConstraints{}
+				for _, f := range tc.allowedFlavors {
+					wl.Spec.AdmissionConstraints.AllowedResourceFlavors = append(wl.Spec.AdmissionConstraints.AllowedResourceFlavors, kueue.AllowedResourceFlavor{Name: kueue.ResourceFlavorReference(f)})
+				}
+			}
+
+			wlInfo := workload.NewInfo(wl)
+
+			ctx, log := utiltesting.ContextWithLog(t)
+			cache := schdcache.New(utiltesting.NewFakeClient())
+			if err := cache.AddClusterQueue(ctx, &cq); err != nil {
+				t.Fatalf("Failed to add CQ to cache: %v", err)
+			}
+			for _, rf := range resourceFlavors {
+				cache.AddOrUpdateResourceFlavor(log, rf)
+			}
+			snapshot, err := cache.Snapshot(ctx)
+			if err != nil {
+				t.Fatalf("unexpected error while building snapshot: %v", err)
+			}
+			cqSnapshot := snapshot.ClusterQueue(kueue.ClusterQueueReference(cq.Name))
+
+			assigner := New(wlInfo, cqSnapshot, resourceFlavors, false, &testOracle{}, nil)
+			gotAssignment := assigner.Assign(log, nil)
+
+			if gotAssignment.RepresentativeMode() != tc.wantRepMode {
+				t.Errorf("RepresentativeMode() = %v, want %v", gotAssignment.RepresentativeMode(), tc.wantRepMode)
+			}
+
+			if tc.wantRepMode == Fit {
+				psAssignment := gotAssignment.PodSets[0]
+				gotFlavor := psAssignment.Flavors[corev1.ResourceCPU].Name
+				if gotFlavor != tc.wantFlavor {
+					t.Errorf("Assigned flavor = %v, want %v", gotFlavor, tc.wantFlavor)
+				}
+			}
+		})
+	}
+}

@@ -18,12 +18,16 @@ limitations under the License.
 
 package v1beta2
 
+import (
+	kueuev1beta2 "sigs.k8s.io/kueue/apis/kueue/v1beta2"
+)
+
 // AdmissionConstraintsApplyConfiguration represents a declarative configuration of the AdmissionConstraints type for use
 // with apply.
 type AdmissionConstraintsApplyConfiguration struct {
 	// allowedResourceFlavors defines the list of ResourceFlavors a Workload can admit to.
 	// If not specified, a Workload can admit to any ResourceFlavor.
-	AllowedResourceFlavors []AllowedResourceFlavorApplyConfiguration `json:"allowedResourceFlavors,omitempty"`
+	AllowedResourceFlavors []kueuev1beta2.ResourceFlavorReference `json:"allowedResourceFlavors,omitempty"`
 }
 
 // AdmissionConstraintsApplyConfiguration constructs a declarative configuration of the AdmissionConstraints type for use with
@@ -35,12 +39,9 @@ func AdmissionConstraints() *AdmissionConstraintsApplyConfiguration {
 // WithAllowedResourceFlavors adds the given value to the AllowedResourceFlavors field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the AllowedResourceFlavors field.
-func (b *AdmissionConstraintsApplyConfiguration) WithAllowedResourceFlavors(values ...*AllowedResourceFlavorApplyConfiguration) *AdmissionConstraintsApplyConfiguration {
+func (b *AdmissionConstraintsApplyConfiguration) WithAllowedResourceFlavors(values ...kueuev1beta2.ResourceFlavorReference) *AdmissionConstraintsApplyConfiguration {
 	for i := range values {
-		if values[i] == nil {
-			panic("nil value passed to WithAllowedResourceFlavors")
-		}
-		b.AllowedResourceFlavors = append(b.AllowedResourceFlavors, *values[i])
+		b.AllowedResourceFlavors = append(b.AllowedResourceFlavors, values[i])
 	}
 	return b
 }
