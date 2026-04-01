@@ -831,6 +831,7 @@ func (a *FlavorAssigner) findFlavorForPodSets(
 		attemptedFlavorIdx = idx
 		fName := resourceGroup.Flavors[idx]
 		if !a.isFlavorAllowed(fName) {
+			status.appendf("flavor %s is not in the allowed list: %v", fName, a.wl.Obj.Spec.AdmissionConstraints.AllowedResourceFlavors)
 			continue
 		}
 

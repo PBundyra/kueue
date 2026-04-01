@@ -415,6 +415,14 @@ func (w *WorkloadWrapper) PreemptionGateStates(preemptionGateStates ...kueue.Pre
 	return w
 }
 
+func (w *WorkloadWrapper) AllowedFlavors(flavors ...kueue.ResourceFlavorReference) *WorkloadWrapper {
+	if w.Spec.AdmissionConstraints == nil {
+		w.Spec.AdmissionConstraints = &kueue.AdmissionConstraints{}
+	}
+	w.Spec.AdmissionConstraints.AllowedResourceFlavors = append(w.Spec.AdmissionConstraints.AllowedResourceFlavors, flavors...)
+	return w
+}
+
 func AppendOwnerReference(obj client.Object, gvk schema.GroupVersionKind, name, uid string, controller, blockDeletion *bool) {
 	obj.SetOwnerReferences(append(obj.GetOwnerReferences(), metav1.OwnerReference{
 		APIVersion:         gvk.GroupVersion().String(),

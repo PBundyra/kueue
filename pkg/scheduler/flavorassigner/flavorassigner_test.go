@@ -4540,43 +4540,50 @@ func TestWorkloadsTopologyRequests_ZeroCountPodSetSkipped(t *testing.T) {
 }
 func TestAssignFlavorsWithAllowedFlavors(t *testing.T) {
 	resourceFlavors := map[kueue.ResourceFlavorReference]*kueue.ResourceFlavor{
-		"f1": utiltestingapi.MakeResourceFlavor("f1").Obj(),
-		"f2": utiltestingapi.MakeResourceFlavor("f2").Obj(),
+		"f1":       utiltestingapi.MakeResourceFlavor("f1").Obj(),
+		"f2":       utiltestingapi.MakeResourceFlavor("f2").Obj(),
+		"occupied": utiltestingapi.MakeResourceFlavor("occupied").Obj(),
 	}
 
 	cq := *utiltestingapi.MakeClusterQueue("cq").
 		ResourceGroup(
 			*utiltestingapi.MakeFlavorQuotas("f1").Resource(corev1.ResourceCPU, "10").Obj(),
 			*utiltestingapi.MakeFlavorQuotas("f2").Resource(corev1.ResourceCPU, "10").Obj(),
+			*utiltestingapi.MakeFlavorQuotas("occupied").Resource(corev1.ResourceCPU, "1").Obj(),
 		).Obj()
 
 	tests := map[string]struct {
-		allowedFlavors []string
+		allowedFlavors []kueue.ResourceFlavorReference
 		wantFlavor     kueue.ResourceFlavorReference
 		wantRepMode    FlavorAssignmentMode
 	}{
-		// "allow only f2": {
-		// 	allowedFlavors: []string{"f2"},
-		// 	wantFlavor:     "f2",
-		// 	wantRepMode:    Fit,
-		// },
-		// "allow only f1": {
-		// 	allowedFlavors: []string{"f1"},
-		// 	wantFlavor:     "f1",
-		// 	wantRepMode:    Fit,
-		// },
-		// "allow both": {
-		// 	allowedFlavors: []string{"f1", "f2"},
-		// 	wantFlavor:     "f1", // first fit
-		// 	wantRepMode:    Fit,
-		// },
-		// "no constraints": {
-		// 	allowedFlavors: nil,
-		// 	wantFlavor:     "f1",
-		// 	wantRepMode:    Fit,
-		// },
+		"allow only f2": {
+			allowedFlavors: []kueue.ResourceFlavorReference{"f2"},
+			wantFlavor:     "f2",
+			wantRepMode:    Fit,
+		},
+		"allow only f1": {
+			allowedFlavors: []kueue.ResourceFlavorReference{"f1"},
+			wantFlavor:     "f1",
+			wantRepMode:    Fit,
+		},
+		"allow only the occupied flavor": {
+			allowedFlavors: []kueue.ResourceFlavorReference{"occupied"},
+			wantFlavor:     "",
+			wantRepMode:    NoFit,
+		},
+		"allow f1 and f2": {
+			allowedFlavors: []kueue.ResourceFlavorReference{"f1", "f2"},
+			wantFlavor:     "f1", // first fit
+			wantRepMode:    Fit,
+		},
+		"no constraints": {
+			allowedFlavors: nil,
+			wantFlavor:     "f1",
+			wantRepMode:    Fit,
+		},
 		"allow non-existent": {
-			allowedFlavors: []string{"non-existent"},
+			allowedFlavors: []kueue.ResourceFlavorReference{"non-existent"},
 			wantFlavor:     "",
 			wantRepMode:    NoFit,
 		},
@@ -4585,15 +4592,9 @@ func TestAssignFlavorsWithAllowedFlavors(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			wl := utiltestingapi.MakeWorkload("wl", "ns").
-				PodSets(*utiltestingapi.MakePodSet("main", 1).Request(corev1.ResourceCPU, "1").Obj()).
+				PodSets(*utiltestingapi.MakePodSet("main", 1).Request(corev1.ResourceCPU, "2").Obj()).
+				AllowedFlavors(tc.allowedFlavors...).
 				Obj()
-
-			if tc.allowedFlavors != nil {
-				wl.Spec.AdmissionConstraints = &kueue.AdmissionConstraints{}
-				for _, f := range tc.allowedFlavors {
-					wl.Spec.AdmissionConstraints.AllowedResourceFlavors = append(wl.Spec.AdmissionConstraints.AllowedResourceFlavors, kueue.AllowedResourceFlavor{Name: kueue.ResourceFlavorReference(f)})
-				}
-			}
 
 			wlInfo := workload.NewInfo(wl)
 

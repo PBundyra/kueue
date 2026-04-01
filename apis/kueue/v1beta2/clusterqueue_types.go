@@ -214,7 +214,7 @@ type ConcurrentAdmissionMigrationMode string
 
 const (
 	// Allow upgrades
-	UpgradeOnly ConcurrentAdmissionMigrationMode = "UpgradeOnly"
+	ConcurrentAdmissionUpgradeOnly ConcurrentAdmissionMigrationMode = "UpgradeOnly"
 )
 
 // +kubebuilder:validation:XValidation:rule="self.flavors.all(x, size(x.resources) == size(self.coveredResources))", message="flavors must have the same number of resources as the coveredResources"
