@@ -333,6 +333,17 @@ func (m *Manager) AddClusterQueue(ctx context.Context, cq *kueue.ClusterQueue) e
 	return nil
 }
 
+func (m *Manager) ConcurrentAdmissionEnabled(cqName kueue.ClusterQueueReference) bool {
+	m.RLock()
+	defer m.RUnlock()
+
+	cq := m.hm.ClusterQueue(cqName)
+	if cq == nil {
+		return false
+	}
+	return cq.ConcurrentAdmissionEnabled()
+}
+
 func (m *Manager) UpdateClusterQueue(ctx context.Context, cq *kueue.ClusterQueue, specUpdated, labelsUpdated bool) error {
 	m.Lock()
 	defer m.Unlock()

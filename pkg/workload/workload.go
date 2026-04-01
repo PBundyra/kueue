@@ -1873,3 +1873,43 @@ func TASAssignedNodeNames(wl *kueue.Workload) []string {
 	}
 	return nodesSet.UnsortedList()
 }
+
+const (
+	// ParentVariantLabel is the label key in the Workload that is a parent of Variants
+	// The value of this label is boolean, and it is set to "true" if the Workload is a parent of Variants.
+	ParentVariantLabel = "kueue.x-k8s.io/parent-variant"
+)
+
+func IsParentVariant(workload *kueue.Workload) bool {
+	if workload == nil {
+		return false
+	}
+	val, ok := workload.Labels[ParentVariantLabel]
+	return ok && val == "true"
+}
+
+func IsVariant(workload *kueue.Workload) bool {
+	if workload == nil {
+		return false
+	}
+	return IsOwnedByAWorkload(workload)
+}
+
+func IsOwnedByAWorkload(workload *kueue.Workload) bool {
+	if workload == nil {
+		return false
+	}
+	for _, owner := range workload.OwnerReferences {
+		if owner.Kind == "Workload" && owner.APIVersion == "kueue.x-k8s.io/v1beta2" {
+			return true
+		}
+	}
+	return false
+}
+
+func SetParentVariantLabel(workload *kueue.Workload) {
+	if workload.Labels == nil {
+		workload.Labels = make(map[string]string)
+	}
+	workload.Labels[ParentVariantLabel] = "true"
+}

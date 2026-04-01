@@ -238,6 +238,17 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
+	cqName, found := r.queues.ClusterQueueForWorkload(&wl)
+	if found {
+		enabled := r.queues.ConcurrentAdmissionEnabled(cqName)
+		if enabled && !workload.IsVariant(&wl) && !workload.IsParentVariant(&wl) {
+			// Workload is missing Parent annotation, set it
+			workload.SetParentVariantLabel(&wl)
+			err := r.client.Update(ctx, &wl)
+			return ctrl.Result{}, client.IgnoreNotFound(err)
+		}
+	}
+
 	finishedCond := apimeta.FindStatusCondition(wl.Status.Conditions, kueue.WorkloadFinished)
 	if finishedCond != nil && finishedCond.Status == metav1.ConditionTrue {
 		if r.workloadRetention == nil || r.workloadRetention.afterFinished == nil {
@@ -1052,6 +1063,15 @@ func (r *WorkloadReconciler) Create(e event.TypedCreateEvent[*kueue.Workload]) b
 	}
 
 	if workload.IsAdmissible(e.Object) {
+		concurrentAdmissionEnabled := false
+		cqName, found := r.queues.ClusterQueueForWorkload(e.Object)
+		if found {
+			concurrentAdmissionEnabled = r.queues.ConcurrentAdmissionEnabled(cqName)
+		}
+		if concurrentAdmissionEnabled && !workload.IsVariant(wlCopy) {
+			log.V(2).Info("Workload Parent detected, not pushing to the heap")
+			return true
+		}
 		if err := r.queues.AddOrUpdateWorkload(log, wlCopy); err != nil {
 			log.V(2).Info("ignored an error for now", "error", err)
 		}
@@ -1149,7 +1169,18 @@ func (r *WorkloadReconciler) Update(e event.TypedUpdateEvent[*kueue.Workload]) b
 		if dra.NeedsDRAReconcile(e.ObjectNew) {
 			log.V(2).Info("Skipping queue update for DRA workload - handled in Reconcile")
 		} else {
-			if err := r.queues.UpdateWorkload(log, wlCopy); err != nil {
+			// if err := r.queues.UpdateWorkload(log, wlCopy); err != nil {
+			concurrentAdmissionEnabled := false
+			cqName, found := r.queues.ClusterQueueForWorkload(wlCopy)
+			if found {
+				concurrentAdmissionEnabled = r.queues.ConcurrentAdmissionEnabled(cqName)
+			}
+			if concurrentAdmissionEnabled && !workload.IsVariant(wlCopy) {
+				log.V(2).Info("Workload Parent detected, not pushing to the heap")
+				return true
+			}
+			err := r.queues.UpdateWorkload(log, wlCopy)
+			if err != nil {
 				log.V(2).Info("ignored an error for now", "error", err)
 			}
 		}
