@@ -191,8 +191,7 @@ func (r *variantReconciler) deactivateVariants(ctx context.Context, variants []k
 		for _, v := range variants {
 			if flavorOrder[v.Spec.AdmissionConstraints.AllowedResourceFlavors[0]] > flavorOrder[*minTargetFlavor] {
 				r.logger().V(2).Info("Deactivating variant because it is below the minTargetFlavor", "variant", v.Name, "flavor", v.Spec.AdmissionConstraints.AllowedResourceFlavors[0], "minTargetFlavor", *minTargetFlavor)
-				v.Spec.Active = ptr.To(false)
-				if err := r.client.Update(ctx, &v); err != nil {
+				if err := r.deactivateVariant(ctx, &v); err != nil {
 					return err
 				}
 			}
@@ -205,8 +204,7 @@ func (r *variantReconciler) deactivateVariants(ctx context.Context, variants []k
 	for _, v := range variants {
 		if flavorOrder[v.Spec.AdmissionConstraints.AllowedResourceFlavors[0]] > flavorOrder[admittedWl.Spec.AdmissionConstraints.AllowedResourceFlavors[0]] {
 			r.logger().V(2).Info("Deactivating variant because it is below the admitted variant", "variant", v.Name, "flavor", v.Spec.AdmissionConstraints.AllowedResourceFlavors[0], "admittedFlavor", admittedWl.Spec.AdmissionConstraints.AllowedResourceFlavors[0])
-			v.Spec.Active = ptr.To(false)
-			if err := r.client.Update(ctx, &v); err != nil {
+			if err := r.deactivateVariant(ctx, &v); err != nil {
 				return err
 			}
 		}
