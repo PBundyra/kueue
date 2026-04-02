@@ -244,6 +244,19 @@ func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kue
 	switch {
 	case admittedVariant == nil && workload.IsAdmitted(parent):
 		r.logger().V(2).Info("Parent is admitted but no variant is admitted, updating parent to not admitted", "parent", parent.Name)
+		// handle the case where the variant got evicted, evict the parent as well to trigger the requeue and reactivate the variants if needed
+		// check if the variant got evicted first, and then evict the parent
+		variantEvictedCond := apimeta.FindStatusCondition(admittedVariant.Status.Conditions, kueue.WorkloadEvicted)
+		if variantEvictedCond != nil && variantEvictedCond.Status == metav1.ConditionTrue {
+			r.logger().V(2).Info("Admitted variant is evicted, evicting the parent workload", "parent", parent.Name, "admittedVariant", admittedVariant.Name)
+			if err := workload.Evict(ctx, r.client, parent, variantEvictedCond.Reason, variantEvictedCond.Message, r.clock); err != nil {
+				return err
+			}
+		}
+		// TODO: figure out what to do with delayed requeueing e.g. waitForPodsReady, and AdmissionChecks
+		
+
+
 		// delete the WorkloadAdmitted condition from the parent
 		// reactivate all variants
 		// TODO: check if there are any other cases than preemption
@@ -298,7 +311,7 @@ func (r *variantReconciler) createVariants(ctx context.Context, parent *kueue.Wo
 
 		variant := &kueue.Workload{
 			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: fmt.Sprintf("%s-variant-%s-", parent.Name, flavor),
+				Name: fmt.Sprintf("%s-variant-%s", parent.Name, flavor),
 				Namespace:    parent.Namespace,
 				Labels:       parent.Labels,
 				Annotations:  parent.Annotations,
