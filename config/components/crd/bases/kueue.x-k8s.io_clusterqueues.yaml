@@ -921,6 +921,33 @@ spec:
                 maxLength: 253
                 pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                 type: string
+              concurrentAdmission:
+                description: concurrentAdmission defines the policy for concurrent
+                  attempts.
+                properties:
+                  migrationConstraints:
+                    description: migrationConstraints defines the constraints of Variants
+                      migration
+                    properties:
+                      minTargetFlavor:
+                        description: |-
+                          minTargetFlavor defines the minimal flavor a Workload can migrate to.
+                          The order is based on the order of flavors in ClusterQueue.
+                          It can only be used if the Mode is `UpgradeOnly` and `ExplicitVariants` is not specified.
+                          If the Mode is `UpgradeOnly` and MinTargetFlavor is not specified, then there's
+                          no constraints on what flavors a Workload can migrate to.
+                        maxLength: 253
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                        type: string
+                      mode:
+                        description: mode defines the mode of Workload's migration.
+                        type: string
+                    required:
+                    - mode
+                    type: object
+                required:
+                - migrationConstraints
+                type: object
               fairSharing:
                 description: |-
                   fairSharing defines the properties of the ClusterQueue when
