@@ -1,7 +1,12 @@
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ResourceFlavor
 metadata:
-  name: "default-flavor"
+  name: "res"
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: "spot"
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
@@ -9,10 +14,19 @@ metadata:
   name: "cluster-queue"
 spec:
   namespaceSelector: {} # match all.
+  concurrentAdmission:
+    migrationConstraints:
+      mode: UpgradeOnly
   resourceGroups:
   - coveredResources: ["cpu", "memory"]
     flavors:
-    - name: "default-flavor"
+    - name: "res"
+      resources:
+      - name: "cpu"
+        nominalQuota: 9
+      - name: "memory"
+        nominalQuota: 36Gi
+    - name: "spot"
       resources:
       - name: "cpu"
         nominalQuota: 9
@@ -26,4 +40,34 @@ metadata:
   name: "user-queue"
 spec:
   clusterQueue: "cluster-queue"
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: "cluster-queue-no-concurrent-admission"
+spec:
+  namespaceSelector: {} # match all.
+  resourceGroups:
+  - coveredResources: ["cpu", "memory"]
+    flavors:
+    - name: "res"
+      resources:
+      - name: "cpu"
+        nominalQuota: 9
+      - name: "memory"
+        nominalQuota: 36Gi
+    - name: "spot"
+      resources:
+      - name: "cpu"
+        nominalQuota: 9
+      - name: "memory"
+        nominalQuota: 36Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  namespace: "default"
+  name: "user-queue-no-concurrent-admission"
+spec:
+  clusterQueue: "cluster-queue-no-concurrent-admission"
 

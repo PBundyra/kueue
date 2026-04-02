@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -60,6 +61,8 @@ type variantReconciler struct {
 	client      client.Client
 	recorder    record.EventRecorder
 	roleTracker *roletracker.RoleTracker
+	mutex       sync.Mutex
+	clock       clock.Clock
 }
 
 var _ reconcile.Reconciler = (*variantReconciler)(nil)
@@ -141,9 +144,39 @@ func getAdmittedVariant(variants []kueue.Workload) *kueue.Workload {
 	return nil
 }
 
+func (r *variantReconciler) deactivateVariant(ctx context.Context, v *kueue.Workload) error {
+	v.Spec.Active = ptr.To(false)
+	if err := r.client.Update(ctx, v); err != nil {
+		return err
+	}
+	// fetch the updated variant and unset quota
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(v), v); err != nil {
+		return err
+	}
+	if evCond := apimeta.FindStatusCondition(v.Status.Conditions, kueue.WorkloadEvicted); evCond != nil && evCond.Status == metav1.ConditionTrue {
+		if workload.HasQuotaReservation(v) {
+			r.logger().V(2).Info("The variant is no longer active, clear the workloads admission")
+			err := workload.PatchAdmissionStatus(ctx, r.client, v, r.clock, func(wl *kueue.Workload) (bool, error) {
+				// The requeued condition status set to true only on EvictedByPreemption
+				setRequeued := (evCond.Reason == kueue.WorkloadEvictedByPreemption) || (evCond.Reason == kueue.WorkloadEvictedDueToNodeFailures)
+				updated := workload.SetRequeuedCondition(wl, evCond.Reason, evCond.Message, setRequeued)
+				if workload.UnsetQuotaReservationWithCondition(wl, "Pending", evCond.Message, r.clock.Now()) {
+					updated = true
+				}
+				return updated, nil
+			})
+			if err != nil {
+				return fmt.Errorf("clearing admission: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
 func (r *variantReconciler) deactivateVariants(ctx context.Context, variants []kueue.Workload, cq *kueue.ClusterQueue) error {
 	admittedWl := getAdmittedVariant(variants)
 	if admittedWl == nil {
+		r.logger().V(2).Info("No admitted variant, no need to deactivate any variant")
 		return nil
 	}
 	flavorOrder := make(map[kueue.ResourceFlavorReference]int)
@@ -154,29 +187,27 @@ func (r *variantReconciler) deactivateVariants(ctx context.Context, variants []k
 	// deactivate Variants below minTargetFlavor if specified
 	minTargetFlavor := cq.Spec.ConcurrentAdmission.MigrationConstraints.MinTargetFlavor
 	if minTargetFlavor != nil {
+		r.logger().V(2).Info("Deactivating variants below minTargetFlavor", "minTargetFlavor", *minTargetFlavor)
 		for _, v := range variants {
-			if flavorOrder[v.Spec.AdmissionConstraints.AllowedResourceFlavors[0]] < flavorOrder[*minTargetFlavor] {
-				if !workload.IsAdmitted(&v) {
-					r.logger().V(2).Info("Deactivating variant because it is below the minTargetFlavor", "variant", v.Name, "flavor", v.Spec.AdmissionConstraints.AllowedResourceFlavors[0], "minTargetFlavor", *minTargetFlavor)
-					v.Spec.Active = ptr.To(false)
-					if err := r.client.Update(ctx, &v); err != nil {
-						return err
-					}
+			if flavorOrder[v.Spec.AdmissionConstraints.AllowedResourceFlavors[0]] > flavorOrder[*minTargetFlavor] {
+				r.logger().V(2).Info("Deactivating variant because it is below the minTargetFlavor", "variant", v.Name, "flavor", v.Spec.AdmissionConstraints.AllowedResourceFlavors[0], "minTargetFlavor", *minTargetFlavor)
+				v.Spec.Active = ptr.To(false)
+				if err := r.client.Update(ctx, &v); err != nil {
+					return err
 				}
 			}
 		}
 		return nil
 	}
 
+	r.logger().V(2).Info("Deactivating variants below the admitted variant", "admittedVariant", admittedWl.Name, "admittedFlavor", admittedWl.Spec.AdmissionConstraints.AllowedResourceFlavors[0])
 	// deactivate Variants below the admitted variant
 	for _, v := range variants {
-		if flavorOrder[v.Spec.AdmissionConstraints.AllowedResourceFlavors[0]] < flavorOrder[admittedWl.Spec.AdmissionConstraints.AllowedResourceFlavors[0]] {
-			if !workload.IsAdmitted(&v) {
-				r.logger().V(2).Info("Deactivating variant because it is below the admitted variant", "variant", v.Name, "flavor", v.Spec.AdmissionConstraints.AllowedResourceFlavors[0], "admittedFlavor", admittedWl.Spec.AdmissionConstraints.AllowedResourceFlavors[0])
-				v.Spec.Active = ptr.To(false)
-				if err := r.client.Update(ctx, &v); err != nil {
-					return err
-				}
+		if flavorOrder[v.Spec.AdmissionConstraints.AllowedResourceFlavors[0]] > flavorOrder[admittedWl.Spec.AdmissionConstraints.AllowedResourceFlavors[0]] {
+			r.logger().V(2).Info("Deactivating variant because it is below the admitted variant", "variant", v.Name, "flavor", v.Spec.AdmissionConstraints.AllowedResourceFlavors[0], "admittedFlavor", admittedWl.Spec.AdmissionConstraints.AllowedResourceFlavors[0])
+			v.Spec.Active = ptr.To(false)
+			if err := r.client.Update(ctx, &v); err != nil {
+				return err
 			}
 		}
 	}
@@ -199,13 +230,13 @@ func sortVariantsByFlavorOrder(variants []kueue.Workload, cq *kueue.ClusterQueue
 
 func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kueue.Workload, variants []kueue.Workload) error {
 	if workload.IsFinished(parent) {
+		finishCond := apimeta.FindStatusCondition(parent.Status.Conditions, kueue.WorkloadFinished)
+		reason := finishCond.Reason
+		message := finishCond.Message
 		// parent finished, deactivate all variants and set them to finished
 		for _, v := range variants {
-			if err := workload.PatchAdmissionStatus(ctx, r.client, parent, clock.RealClock{}, func(wl *kueue.Workload) (bool, error) {
-				workload.SetFinishedCondition(&v, time.Now(), "ParentFinished", fmt.Sprintf("Parent workload %s is finished", parent.Name))
-				return true, nil
-			}); err != nil {
-				return client.IgnoreNotFound(err)
+			if err := workload.Finish(ctx, r.client, &v, reason, message, r.clock); err != nil && !apierrors.IsNotFound(err) {
+				return err
 			}
 		}
 	}
@@ -221,8 +252,11 @@ func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kue
 	case admittedVariant != nil && !workload.IsAdmitted(parent):
 		r.logger().V(2).Info("Parent is not admitted but a variant is admitted, updating parent to admitted", "parent", parent.Name, "admittedVariant", admittedVariant.Name)
 
-		if err := workload.PatchAdmissionStatus(ctx, r.client, parent, clock.RealClock{}, func(wl *kueue.Workload) (bool, error) {
-			newCondition := metav1.Condition{
+		if err := workload.PatchAdmissionStatus(ctx, r.client, parent, r.clock, func(wl *kueue.Workload) (bool, error) {
+			wl.Status.Admission = admittedVariant.Status.Admission
+			r.logger().V(2).Info("Parent admission status", "admission", wl.Status.Admission)
+			workload.SetQuotaReservation(wl, wl.Status.Admission, r.clock)
+			admittedCond := metav1.Condition{
 				Type:               kueue.WorkloadAdmitted,
 				Status:             metav1.ConditionTrue,
 				Reason:             "Admitted",
@@ -230,7 +264,8 @@ func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kue
 				ObservedGeneration: parent.Generation,
 				LastTransitionTime: metav1.NewTime(time.Now()),
 			}
-			apimeta.SetStatusCondition(&parent.Status.Conditions, newCondition)
+			apimeta.SetStatusCondition(&wl.Status.Conditions, admittedCond)
+			r.logger().V(2).Info("Parent status at the end of patch", "conditions", wl.Status.Conditions, "admission", wl.Status.Admission)
 			return true, nil
 		}); err != nil {
 			return client.IgnoreNotFound(err)
@@ -252,6 +287,7 @@ func (r *variantReconciler) createVariants(ctx context.Context, parent *kueue.Wo
 		// check if a variant with the same flavor already exists
 		variantExists := false
 		for _, v := range variants {
+			log.V(2).Info("Checking if variant has the same flavor", "variant", v.Name, "flavor", v.Spec.AdmissionConstraints.AllowedResourceFlavors[0], "desiredFlavor", flavor)
 			if v.Spec.AdmissionConstraints.AllowedResourceFlavors[0] == flavor {
 				variantExists = true
 				log.V(2).Info("Variant with the same flavor already exists, no action needed", "variant", v.Name, "flavor", flavor)
@@ -262,15 +298,22 @@ func (r *variantReconciler) createVariants(ctx context.Context, parent *kueue.Wo
 			continue
 		}
 
-		log.V(2).Info("Creating variant for flavor", "flavor", flavor)
 		variant := &kueue.Workload{
 			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: fmt.Sprintf("%s-variant-%s", parent.Name, flavor),
+				GenerateName: fmt.Sprintf("%s-variant-%s-", parent.Name, flavor),
 				Namespace:    parent.Namespace,
+				Labels:       parent.Labels,
+				Annotations:  parent.Annotations,
 			},
 			Spec: parent.Spec,
 		}
-		variant.Spec.AdmissionConstraints.AllowedResourceFlavors = []kueue.ResourceFlavorReference{flavor}
+		// delete parent label from variants
+		delete(variant.Labels, workload.ParentVariantLabel)
+		variant.Spec.AdmissionConstraints = &kueue.AdmissionConstraints{
+			// we only support one flavor per variant for now, we can extend this in the future if needed
+			AllowedResourceFlavors: []kueue.ResourceFlavorReference{flavor},
+		}
+		log.V(2).Info("Creating variant for flavor", "flavor", flavor, "variant", variant.Name)
 
 		// Set the owner reference to the parent workload
 		if err := ctrl.SetControllerReference(parent, variant, r.client.Scheme()); err != nil {
@@ -287,6 +330,9 @@ func (r *variantReconciler) createVariants(ctx context.Context, parent *kueue.Wo
 }
 
 func (r *variantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
 	log := ctrl.LoggerFrom(ctx)
 	log.V(2).Info("Reconcile Workload")
 
@@ -344,11 +390,13 @@ func (r *variantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		// if one variant is admitted deactivate all variants that are below the minFlavorTarget if present, or below the admitted variant otherwise
 		log.V(2).Info("Concurrent admission policy is UpgradeOnly, deactivating variants if needed")
 		if err := r.deactivateVariants(ctx, variants, cq); err != nil {
+			r.logger().V(2).Info("Failed to deactivate variants", "error", err)
 			return ctrl.Result{}, err
 		}
 	}
 
 	if err := r.syncAdmissionStatus(ctx, parent, variants); err != nil {
+		log.V(2).Info("Failed to sync admission status", "error", err)
 		return ctrl.Result{}, err
 	}
 	// TODO: add logic to reactivate variants if the parent Workload is evicted and requeued
@@ -429,6 +477,7 @@ func newVariantReconciler(c client.Client, queues *qcache.Manager, cache *schdca
 		cache:       cache,
 		recorder:    recorder,
 		roleTracker: roleTracker,
+		clock:       clock.RealClock{},
 	}
 }
 
