@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"sync"
+	// "sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -61,7 +61,7 @@ type variantReconciler struct {
 	client      client.Client
 	recorder    record.EventRecorder
 	roleTracker *roletracker.RoleTracker
-	mutex       sync.Mutex
+	// mutex       sync.Mutex
 	clock       clock.Clock
 }
 
@@ -113,27 +113,27 @@ func (r *variantReconciler) getClusterQueue(wl *kueue.Workload) (*kueue.ClusterQ
 	return cq, nil
 }
 
-func (r *variantReconciler) getWorkloadFamily(wl *kueue.Workload) (parent *kueue.Workload, variants []kueue.Workload, err error) {
-	if isParentVariant(wl) {
-		variants, err := r.getVariants(wl)
-		if err != nil {
-			return nil, nil, err
-		}
-		return wl, variants, nil
-	}
-	if isVariant(wl) {
-		parent, err := r.getParent(wl)
-		if err != nil {
-			return nil, nil, err
-		}
-		variants, err := r.getVariants(parent)
-		if err != nil {
-			return nil, nil, err
-		}
-		return parent, variants, nil
-	}
-	return nil, nil, fmt.Errorf("workload %s/%s is neither a parent variant nor a variant", wl.Namespace, wl.Name)
-}
+// func (r *variantReconciler) getWorkloadFamily(wl *kueue.Workload) (parent *kueue.Workload, variants []kueue.Workload, err error) {
+// 	if isParentVariant(wl) {
+// 		variants, err := r.getVariants(wl)
+// 		if err != nil {
+// 			return nil, nil, err
+// 		}
+// 		return wl, variants, nil
+// 	}
+// 	if isVariant(wl) {
+// 		parent, err := r.getParent(wl)
+// 		if err != nil {
+// 			return nil, nil, err
+// 		}
+// 		variants, err := r.getVariants(parent)
+// 		if err != nil {
+// 			return nil, nil, err
+// 		}
+// 		return parent, variants, nil
+// 	}
+// 	return nil, nil, fmt.Errorf("workload %s/%s is neither a parent variant nor a variant", wl.Namespace, wl.Name)
+// }
 
 func getAdmittedVariant(variants []kueue.Workload) *kueue.Workload {
 	for _, wl := range variants {
@@ -327,10 +327,8 @@ func (r *variantReconciler) createVariants(ctx context.Context, parent *kueue.Wo
 	return nil
 }
 
+// Reconcile reconciles only Parent Worklaods
 func (r *variantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
 	log := ctrl.LoggerFrom(ctx)
 	log.V(2).Info("Reconcile Workload")
 
@@ -342,7 +340,13 @@ func (r *variantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	parent, variants, err := r.getWorkloadFamily(wl)
+
+	// Safety check: The map func and predicates should only ever send us Parent Workloads
+	if !isParentVariant(wl) {
+		return ctrl.Result{}, nil
+	}
+	parent := wl
+	variants, err := r.getVariants(parent)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -490,7 +494,15 @@ func (r *variantReconciler) setupWithManager(mgr ctrl.Manager, cache *schdcache.
 		WatchesRawSource(source.TypedKind(
 			mgr.GetCache(),
 			&kueue.Workload{},
-			&handler.TypedEnqueueRequestForObject[*kueue.Workload]{},
+			handler.TypedEnqueueRequestsFromMapFunc(func(_ context.Context, obj *kueue.Workload) []reconcile.Request {
+				if isParentVariant(obj) {
+					return []reconcile.Request{{NamespacedName: client.ObjectKeyFromObject(obj)}}
+				}
+				if isVariant(obj) {
+					return []reconcile.Request{{NamespacedName: client.ObjectKey{Namespace: obj.Namespace, Name: getParentVariant(obj)}}}
+				}
+				return nil
+			}),
 			r,
 		)).
 		Watches(&kueue.ClusterQueue{}, cqHandler).
