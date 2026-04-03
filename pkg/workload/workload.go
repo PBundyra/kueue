@@ -1692,6 +1692,22 @@ func Finish(ctx context.Context, c client.Client, wl *kueue.Workload, reason, ms
 	return nil
 }
 
+func Activate(ctx context.Context, c client.Client, wl *kueue.Workload) error {
+	if IsActive(wl) {
+		return nil
+	}
+	wl.Spec.Active = ptr.To(true)
+	return c.Update(ctx, wl)
+}
+
+func Deactivate(ctx context.Context, c client.Client, wl *kueue.Workload) error {
+	if !IsActive(wl) {
+		return nil
+	}
+	wl.Spec.Active = ptr.To(false)
+	return c.Update(ctx, wl)
+}
+
 func PriorityClassName(wl *kueue.Workload) string {
 	if wl.Spec.PriorityClassRef != nil {
 		return wl.Spec.PriorityClassRef.Name
