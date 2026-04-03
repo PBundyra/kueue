@@ -17,6 +17,10 @@ spec:
   concurrentAdmission:
     migrationConstraints:
       mode: UpgradeOnly
+  preemption:
+    withinClusterQueue: LowerPriority
+  flavorFungibility:
+    whenCanPreempt: MayStopSearch
   resourceGroups:
   - coveredResources: ["cpu", "memory"]
     flavors:
@@ -70,4 +74,18 @@ metadata:
   name: "user-queue-no-concurrent-admission"
 spec:
   clusterQueue: "cluster-queue-no-concurrent-admission"
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: WorkloadPriorityClass
+metadata:
+  name: high
+value: 10000
+description: "Sample priority"
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: WorkloadPriorityClass
+metadata:
+  name: low
+value: 1
+description: "Sample priority"
 
