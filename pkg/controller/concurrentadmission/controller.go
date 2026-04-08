@@ -22,6 +22,7 @@ import (
 	"slices"
 
 	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -253,19 +254,26 @@ func sortVariantsByFlavorOrder(variants []kueue.Workload, cq *kueue.ClusterQueue
 	return variants
 }
 
+func (r *variantReconciler) syncFinished(ctx context.Context, parent *kueue.Workload, variants []kueue.Workload) error {
+	finishCond := apimeta.FindStatusCondition(parent.Status.Conditions, kueue.WorkloadFinished)
+	for i := range variants {
+		v := &variants[i]
+		if err := workload.Finish(ctx, r.client, v, finishCond.Reason, finishCond.Message, r.clock); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+// TODO check if on migration the parents status syncs
 func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kueue.Workload, variants []kueue.Workload) error {
 	if workload.IsFinished(parent) {
-		finishCond := apimeta.FindStatusCondition(parent.Status.Conditions, kueue.WorkloadFinished)
-		for i := range variants {
-			v := &variants[i]
-			if err := workload.Finish(ctx, r.client, v, finishCond.Reason, finishCond.Message, r.clock); err != nil && !apierrors.IsNotFound(err) {
-				return err
-			}
-		}
+		return r.syncFinished(ctx, parent, variants)
 	}
 
 	admittedVariant := getAdmittedVariant(variants)
 	switch {
+	// variant got evicted
 	case admittedVariant == nil && workload.IsAdmitted(parent):
 		r.logger().V(2).Info("Parent is admitted but no variant is admitted, updating parent to not admitted", "parent", parent.Name)
 		// delete parents admission from status and change its conditions to quotareserved=false and pending with the message that no variant is admitted,
@@ -278,7 +286,24 @@ func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kue
 		if err != nil {
 			return fmt.Errorf("clearing admission: %w", err)
 		}
+		// parent got evicted or parent's admission status has not been synced yet
 	case admittedVariant != nil && !workload.IsAdmitted(parent):
+		// TODO differentiate what is the case here
+		// Did the parent got evicted and the variant is still admitted with the old variant's admission? e.g. due to waitForPodsReady
+		variantAdmittedCond := apimeta.FindStatusCondition(admittedVariant.Status.Conditions, kueue.WorkloadAdmitted)
+		parentEvictedCond := apimeta.FindStatusCondition(parent.Status.Conditions, kueue.WorkloadEvicted)
+
+		evictVariant := false
+
+		if apimeta.IsStatusConditionTrue(parent.Status.Conditions, kueue.WorkloadEvicted) {
+			evictVariant = variantAdmittedCond.LastTransitionTime.Before(&parentEvictedCond.LastTransitionTime)
+		}
+		if evictVariant {
+			workload.Evict(ctx, r.client, r.recorder, admittedVariant, parentEvictedCond.Reason, parentEvictedCond.Message, "", r.clock, false, nil, nil, nil)
+		}
+
+		// variant should not be evicted, parent should be admitted
+
 		r.logger().V(2).Info("Parent is not admitted but a variant is admitted, updating parent to admitted", "parent", parent.Name, "admittedVariant", admittedVariant.Name)
 		if err := workload.PatchAdmissionStatus(ctx, r.client, parent, r.clock, func(wl *kueue.Workload) (bool, error) {
 			workload.SetQuotaReservation(wl, admittedVariant.Status.Admission, r.clock)
@@ -289,7 +314,24 @@ func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kue
 			return client.IgnoreNotFound(err)
 		}
 	case admittedVariant != nil && workload.IsAdmitted(parent):
-		r.logger().V(2).Info("Parent and admitted variant are both admitted, no action needed", "parent", parent.Name, "admittedVariant", admittedVariant.Name)
+		r.logger().V(2).Info("Parent and admitted variant are both admitted, checking if the parent's admission status is the same as the admitted variant", "parent", parent.Name, "admittedVariant", admittedVariant.Name)
+		if err := workload.PatchAdmissionStatus(ctx, r.client, parent, r.clock, func(wl *kueue.Workload) (bool, error) {
+			// check if the admission of the parent is the same a variant's
+			oldStatus := wl.Status.Admission.DeepCopy()
+			updated := false
+			updated = workload.SetQuotaReservation(wl, admittedVariant.Status.Admission, r.clock) || updated
+			updated = !equality.Semantic.DeepEqual(oldStatus, &wl.Status.Admission) || updated
+			variantAdmittedCond := apimeta.FindStatusCondition(admittedVariant.Status.Conditions, kueue.WorkloadAdmitted)
+			updated = apimeta.SetStatusCondition(&wl.Status.Conditions, *variantAdmittedCond) || updated
+			if updated {
+				r.logger().V(2).Info("Updated parent's admission status to match the admitted variant", "parent", parent.Name, "admittedVariant", admittedVariant.Name)
+			} else {
+				r.logger().V(2).Info("Parent's admission status is already up to date with the admitted variant, no update needed", "parent", parent.Name, "admittedVariant", admittedVariant.Name)
+			}
+			return updated, nil
+		}); err != nil {
+			return client.IgnoreNotFound(err)
+		}
 	case admittedVariant == nil && !workload.IsAdmitted(parent):
 		r.logger().V(2).Info("Parent and variants are both not admitted, no action needed", "parent", parent.Name)
 	}
@@ -348,8 +390,7 @@ func (r *variantReconciler) createVariants(ctx context.Context, parent *kueue.Wo
 			return err
 		}
 		r.logger().V(2).Info("Created variant", "variant", variant.Name, "flavor", flavor)
-		// r.record.Eventf(object, corev1.EventTypeNormal, ReasonCreatedWorkload,
-			// "Created Workload: %v", workload.Key(wl))
+		// TODO think if we need any events here
 	}
 	return nil
 }
@@ -376,20 +417,22 @@ func (r *variantReconciler) syncVariantEvictionStatus(ctx context.Context, paren
 
 	// 2. Handle parent eviction - e.g. due to waitForPodsReady
 	// TODO: test manually
-	if !apimeta.IsStatusConditionTrue(parent.Status.Conditions, kueue.WorkloadEvicted) || !workload.HasQuotaReservation(parent) {
-		return nil
-	}
+	// TODO: change into passing eviction instead of just clearing admission
+	// if !apimeta.IsStatusConditionTrue(parent.Status.Conditions, kueue.WorkloadEvicted) || !workload.HasQuotaReservation(parent) {
+	// 	return nil
+	// }
 
-	r.logger().V(2).Info("The parent workload is evicted, clearing the variants's admission", "parent", parent.Name)
-	admittedVariant := getAdmittedVariant(variants)
-	if admittedVariant == nil {
-		r.logger().V(2).Info("No admitted variant found", "parent", parent.Name)
-		return nil
-	}
-	evCond := apimeta.FindStatusCondition(parent.Status.Conditions, kueue.WorkloadEvicted)
-	if err := r.clearWorkloadAdmission(ctx, admittedVariant, evCond); err != nil {
-		return fmt.Errorf("clearing parent admission: %w", err)
-	}
+	// r.logger().V(2).Info("The parent workload is evicted, clearing the variants's admission", "parent", parent.Name)
+	// admittedVariant := getAdmittedVariant(variants)
+	// // TODO compare the times of Eviction and Admission to figure out what is the source of truth
+	// if admittedVariant == nil {
+	// 	r.logger().V(2).Info("No admitted variant found", "parent", parent.Name)
+	// 	return nil
+	// }
+	// evCond := apimeta.FindStatusCondition(parent.Status.Conditions, kueue.WorkloadEvicted)
+	// if err := r.clearWorkloadAdmission(ctx, admittedVariant, evCond); err != nil {
+	// 	return fmt.Errorf("clearing parent admission: %w", err)
+	// }
 
 	return nil
 }
@@ -409,7 +452,7 @@ func (r *variantReconciler) clearWorkloadAdmission(ctx context.Context, wl *kueu
 // Reconcile reconciles Worklaods that are Parents of Variants.
 func (r *variantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
-	log.V(2).Info("Reconcile Workload")
+	log.V(2).Info("Reconcile Workload, with more logs to sync")
 
 	wl := &kueue.Workload{}
 	if err := r.client.Get(ctx, req.NamespacedName, wl); err != nil {
@@ -429,6 +472,7 @@ func (r *variantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 	cq, err := r.getClusterQueue(parent)
 	// TODO: add logic that deletes all Workloads if ConcurrentAdmission is disabled
+	// TODO: add a check if CQ has ConcurrentAdmission set
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -443,7 +487,12 @@ func (r *variantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return v.Name
 	}))
 
+	// TODO: compare the flavors of the variants with the flavors in the cluster queue and not just the number of variants,
+	//  to cover the case when the cluster queue got updated with a different set of flavors, or when the flavors in the cluster queue got reduced,
+	//  so we need to delete the excess variants that are not in the cluster queue flavors anymore, or that are above the number of flavors in the cluster queue
 	if len(variants) > len(flavorOrder) {
+		// This can happen when the flavors in the cluster queue got reduced, or when the cluster queue got updated with a different set of flavors,
+		// so we need to delete the excess variants that are not in the cluster queue flavors anymore, or that are above the number of flavors in the cluster queue
 		log.V(2).Info("Too many variants, deleting the excess ones", "desired", len(flavorOrder), "actual", len(variants))
 	}
 	if len(variants) < len(flavorOrder) {
@@ -457,7 +506,7 @@ func (r *variantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		log.V(2).Info("Desired number of variants, no action needed", "desired", len(flavorOrder), "actual", len(variants))
 	}
 
-	log.V(2).Info("Deactivating variants if needed")
+	log.V(2).Info("Syncing variants if needed")
 	if err := r.syncVariantEvictionStatus(ctx, parent, variants); err != nil {
 		r.logger().V(2).Info("Failed to sync variant eviction status", "error", err)
 		return ctrl.Result{}, err
@@ -476,6 +525,7 @@ func (r *variantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	// TODO: think if this call should be before or after activating/deactivating variants, or if we need to call it multiple times, e.g. after activating and after deactivating
 	if err := r.syncAdmissionStatus(ctx, parent, variants); err != nil {
 		log.V(2).Info("Failed to sync admission status", "error", err)
 		return ctrl.Result{}, err

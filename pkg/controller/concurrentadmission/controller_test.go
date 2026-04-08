@@ -19,6 +19,7 @@ package concurrentadmission
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -315,6 +316,139 @@ func TestReconcile(t *testing.T) {
 					Request(corev1.ResourceCPU, "1").
 					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
 					Active(false). // Should be deactivated!
+					Obj(),
+			},
+			wantResult: reconcile.Result{},
+			wantErr:    false,
+		},
+		"admitted variant evicted; clear the reservation": {
+			parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+				Queue("lq").
+				Label(workload.ParentVariantLabel, "true").
+				Obj(),
+			variantWorkloads: []kueue.Workload{
+				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
+					Queue("lq").
+					AllowedFlavors("spot").
+					Request(corev1.ResourceCPU, "1").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					SimpleReserveQuota("cq", "spot", metav1.Now().Time).
+					AdmittedAt(true, metav1.Now().Time).
+					Condition(metav1.Condition{
+						Type:    kueue.WorkloadEvicted,
+						Status:  metav1.ConditionTrue,
+						Reason:  kueue.WorkloadEvictedByPreemption,
+						Message: "Evicted by preemption",
+					}).
+					Active(true).
+					Obj(),
+				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
+					Queue("lq").
+					AllowedFlavors("on-demand").
+					Request(corev1.ResourceCPU, "1").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					Active(false).
+					Obj(),
+			},
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+				Queue("lq").
+				Label(workload.ParentVariantLabel, "true").
+				Obj(),
+			wantVariantWorkloads: []kueue.Workload{
+				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
+					Queue("lq").
+					AllowedFlavors("spot").
+					Request(corev1.ResourceCPU, "1").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					// SimpleReserveQuota("cq", "spot", metav1.Now().Time). // Kept due to fake client limitations
+					Condition(metav1.Condition{
+						Type:    kueue.WorkloadEvicted,
+						Status:  metav1.ConditionTrue,
+						Reason:  kueue.WorkloadEvictedByPreemption,
+						Message: "Evicted by preemption",
+					}).
+					Condition(metav1.Condition{
+						Type:    kueue.WorkloadQuotaReserved,
+						Status:  metav1.ConditionFalse,
+						Reason:  kueue.WorkloadEvictedByPreemption,
+						Message: "Evicted by preemption",
+					}).
+					Active(true).
+					Obj(),
+				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
+					Queue("lq").
+					AllowedFlavors("on-demand").
+					Request(corev1.ResourceCPU, "1").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					Active(false).
+					Obj(),
+			},
+			wantResult: reconcile.Result{},
+			wantErr:    false,
+		},
+		"evicted parent workload evicts admitted variant": {
+			parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+				Queue("lq").
+				Label(workload.ParentVariantLabel, "true").
+				SimpleReserveQuota("cq", "spot", metav1.Now().Time).
+				AdmittedAt(true, metav1.Now().Time).
+				Condition(metav1.Condition{
+					Type:    kueue.WorkloadEvicted,
+					Status:  metav1.ConditionTrue,
+					Reason:  kueue.WorkloadEvictedDueToNodeFailures,
+					Message: "Evicted due to node failures",
+					LastTransitionTime: metav1.NewTime(metav1.Now().Time.Add(1 * time.Hour)),
+				}).
+				Obj(),
+			variantWorkloads: []kueue.Workload{
+				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
+					Queue("lq").
+					AllowedFlavors("spot").
+					Request(corev1.ResourceCPU, "1").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					SimpleReserveQuota("cq", "spot", metav1.Now().Time).
+					AdmittedAt(true, metav1.Now().Time).
+					Obj(),
+				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
+					Queue("lq").
+					AllowedFlavors("on-demand").
+					Request(corev1.ResourceCPU, "1").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					Active(false).
+					Obj(),
+			},
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+				Queue("lq").
+				Label(workload.ParentVariantLabel, "true").
+				SimpleReserveQuota("cq", "spot", metav1.Now().Time). // Kept due to fake client
+				Condition(metav1.Condition{
+					Type:    kueue.WorkloadEvicted,
+					Status:  metav1.ConditionTrue,
+					Reason:  kueue.WorkloadEvictedDueToNodeFailures,
+					Message: "Evicted due to node failures",
+				}).
+				Obj(),
+			wantVariantWorkloads: []kueue.Workload{
+				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
+					Queue("lq").
+					AllowedFlavors("spot").
+					Request(corev1.ResourceCPU, "1").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					SimpleReserveQuota("cq", "spot", metav1.Now().Time). // Kept due to fake client
+					Condition(metav1.Condition{
+						Type:    kueue.WorkloadQuotaReserved,
+						Status:  metav1.ConditionFalse,
+						Reason:  kueue.WorkloadEvictedDueToNodeFailures,
+						Message: "Evicted due to node failures",
+					}).
+					Active(true).
+					Obj(),
+				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
+					Queue("lq").
+					AllowedFlavors("on-demand").
+					Request(corev1.ResourceCPU, "1").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					Active(false).
 					Obj(),
 			},
 			wantResult: reconcile.Result{},

@@ -88,4 +88,10 @@ metadata:
   name: low
 value: 1
 description: "Sample priority"
-
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: WorkloadPriorityClass
+metadata:
+  name: Camel
+value: 1
+description: "Sample priority"
