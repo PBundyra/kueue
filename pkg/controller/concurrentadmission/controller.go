@@ -43,7 +43,7 @@ import (
 	configapi "sigs.k8s.io/kueue/apis/config/v1beta2"
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	qcache "sigs.k8s.io/kueue/pkg/cache/queue"
-	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
+	// schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
 	"sigs.k8s.io/kueue/pkg/controller/core"
 	"sigs.k8s.io/kueue/pkg/util/roletracker"
 	utilslices "sigs.k8s.io/kueue/pkg/util/slices"
@@ -55,9 +55,9 @@ const (
 )
 
 type variantReconciler struct {
-	logName     string
-	queues      *qcache.Manager
-	cache       *schdcache.Cache
+	logName string
+	queues  *qcache.Manager
+	// cache       *schdcache.Cache
 	client      client.Client
 	recorder    record.EventRecorder
 	roleTracker *roletracker.RoleTracker
@@ -66,6 +66,26 @@ type variantReconciler struct {
 
 var _ reconcile.Reconciler = (*variantReconciler)(nil)
 var _ predicate.TypedPredicate[*kueue.Workload] = (*variantReconciler)(nil)
+
+func GetVariants(c client.Client, parent *kueue.Workload) ([]kueue.Workload, error) {
+	if !isParentVariant(parent) {
+		return nil, fmt.Errorf("workload %s/%s is not a parent variant", parent.Namespace, parent.Name)
+	}
+	// get workloads for which the parents is an owner using owner references
+	list := &kueue.WorkloadList{}
+	if err := c.List(context.Background(), list, client.InNamespace(parent.Namespace)); err != nil {
+		// TODO: add an index for parent variant to avoid listing all workloads in the namespace
+		return nil, err
+	}
+	variants := make([]kueue.Workload, 0)
+	for i := range list.Items {
+		if getParentVariant(&list.Items[i]) != parent.Name {
+			continue
+		}
+		variants = append(variants, list.Items[i])
+	}
+	return variants, nil
+}
 
 func (r *variantReconciler) getVariants(wl *kueue.Workload) ([]kueue.Workload, error) {
 	if !isParentVariant(wl) {
@@ -207,7 +227,6 @@ func (r *variantReconciler) deactivateVariant(ctx context.Context, v *kueue.Work
 // If minTargetFlavor is specified, it deactivates variants that are below the minTargetFlavor in the flavor order.
 // Otherwise it deactivates variants that are below the admitted variant in the flavor order.
 func (r *variantReconciler) deactivateVariants(ctx context.Context, parent *kueue.Workload, variants []kueue.Workload, cq *kueue.ClusterQueue, flavorOrder map[kueue.ResourceFlavorReference]int) error {
-	// TODO if parent is deactivated, we should deactivate all variants
 	if !workload.IsActive(parent) {
 		r.logger().V(2).Info("Parent is not active, deactivating all variants", "parent", parent.Name)
 		for i := range variants {
@@ -225,14 +244,17 @@ func (r *variantReconciler) deactivateVariants(ctx context.Context, parent *kueu
 		return nil
 	}
 	// deactivate Variants below minTargetFlavor if specified
-	if cq.Spec.ConcurrentAdmission == nil {
-		return nil
+	var minTargetFlavor *kueue.ResourceFlavorReference
+	if cq.Spec.ConcurrentAdmission != nil {
+		minTargetFlavor = cq.Spec.ConcurrentAdmission.MigrationConstraints.MinTargetFlavor
 	}
-	minTargetFlavor := cq.Spec.ConcurrentAdmission.MigrationConstraints.MinTargetFlavor
 	if minTargetFlavor != nil {
 		r.logger().V(2).Info("Deactivating variants below minTargetFlavor", "minTargetFlavor", *minTargetFlavor)
 		for i := range variants {
 			v := &variants[i]
+			if v.Name == admittedWl.Name {
+				continue
+			}
 			if flavorOrder[v.Spec.AdmissionConstraints.AllowedResourceFlavors[0]] > flavorOrder[*minTargetFlavor] {
 				r.logger().V(2).Info("Deactivating variant because it is below the minTargetFlavor", "variant", v.Name, "flavor", v.Spec.AdmissionConstraints.AllowedResourceFlavors[0], "minTargetFlavor", *minTargetFlavor)
 				if err := r.deactivateVariant(ctx, v); err != nil {
@@ -240,9 +262,8 @@ func (r *variantReconciler) deactivateVariants(ctx context.Context, parent *kueu
 				}
 			}
 		}
-		return nil
 	}
-	// deactivate Variants below the admitted variant
+	// also deactivate Variants below the admitted variant regardless of minTargetFlavor
 	r.logger().V(2).Info("Deactivating variants below the admitted variant", "admittedVariant", admittedWl.Name, "admittedFlavor", admittedWl.Spec.AdmissionConstraints.AllowedResourceFlavors[0])
 	for i := range variants {
 		v := &variants[i]
@@ -277,19 +298,17 @@ func (r *variantReconciler) syncFinished(ctx context.Context, parent *kueue.Work
 	return nil
 }
 
-// TODO check if on migration the parents status syncs
 func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kueue.Workload, variants []kueue.Workload) error {
 	if workload.IsFinished(parent) {
 		return r.syncFinished(ctx, parent, variants)
 	}
-	// TODO make sure to support TAS
-
 	admittedVariant := getAdmittedVariant(variants)
 	switch {
-	// variant got evicted
 	case admittedVariant == nil && workload.IsAdmitted(parent):
+		// variant got evicted
 		r.logger().V(2).Info("Parent is admitted but no variant is admitted, updating parent to not admitted", "parent", parent.Name)
 		// delete parents admission from status and change its conditions to quotareserved=false and pending with the message that no variant is admitted,
+		// TODO maybe evict instead of unset (?)
 		err := workload.PatchAdmissionStatus(ctx, r.client, parent, r.clock, func(wl *kueue.Workload) (bool, error) {
 			if workload.UnsetQuotaReservationWithCondition(wl, "Pending", "No variant is admitted", r.clock.Now()) {
 				return true, nil
@@ -403,60 +422,35 @@ func (r *variantReconciler) createVariants(ctx context.Context, parent *kueue.Wo
 			return err
 		}
 		r.logger().V(2).Info("Created variant", "variant", variant.Name, "flavor", flavor)
-		// TODO think if we need any events here
+		// TODO think if we need any events recording here
 	}
 	return nil
 }
 
 // syncVariantEvictionStatus frees quota reservation of the evicted variant leading to requeuing, mimicking the behavior of jobframework for regular workloads.
 // This is needed as jobframework ignores variant workloads and processes only parents, to preserve 1:1 mapping between a Workload and a Job.
-// The eviction may come from two sources:
-// 1) Eviction of the variant, e.g., due to preemption.
-// 2) Eviction of the parent workload, e.g., due to waitForPodsReady.
 func (r *variantReconciler) syncVariantEvictionStatus(ctx context.Context, parent *kueue.Workload, variants []kueue.Workload) error {
 	r.logger().V(2).Info("Syncing eviction status of variants", "parent", parent.Name)
-
-	// 1. Handle variant evictions, e.g. due to priorities in the cluster queue
+	// Handle variant evictions, e.g. due to priorities in the cluster queue
 	for i := range variants {
 		v := &variants[i] // Safe pointer reference to the slice element
 		evCond := apimeta.FindStatusCondition(v.Status.Conditions, kueue.WorkloadEvicted)
 		if evCond != nil && evCond.Status == metav1.ConditionTrue && workload.HasQuotaReservation(v) {
 			r.logger().V(2).Info("The variant has been evicted, clearing the workload's admission", "variant", v.Name)
-			// TODO maybe just evict Parent
 			if err := r.clearWorkloadAdmission(ctx, v, evCond); err != nil {
 				return fmt.Errorf("clearing variant admission: %w", err)
 			}
 		}
 	}
-
-	// 2. Handle parent eviction - e.g. due to waitForPodsReady
-	// TODO: test manually
-	// TODO: change into passing eviction instead of just clearing admission
-	// if !apimeta.IsStatusConditionTrue(parent.Status.Conditions, kueue.WorkloadEvicted) || !workload.HasQuotaReservation(parent) {
-	// 	return nil
-	// }
-
-	// r.logger().V(2).Info("The parent workload is evicted, clearing the variants's admission", "parent", parent.Name)
-	// admittedVariant := getAdmittedVariant(variants)
-	// // TODO compare the times of Eviction and Admission to figure out what is the source of truth
-	// if admittedVariant == nil {
-	// 	r.logger().V(2).Info("No admitted variant found", "parent", parent.Name)
-	// 	return nil
-	// }
-	// evCond := apimeta.FindStatusCondition(parent.Status.Conditions, kueue.WorkloadEvicted)
-	// if err := r.clearWorkloadAdmission(ctx, admittedVariant, evCond); err != nil {
-	// 	return fmt.Errorf("clearing parent admission: %w", err)
-	// }
-
 	return nil
 }
 
 func (r *variantReconciler) clearWorkloadAdmission(ctx context.Context, wl *kueue.Workload, evCond *metav1.Condition) error {
-	return workload.PatchAdmissionStatus(ctx, r.client, wl, r.clock, func(wl *kueue.Workload) (bool, error) {
+	return workload.PatchAdmissionStatus(ctx, r.client, wl, r.clock, func(w *kueue.Workload) (bool, error) {
 		setRequeued := (evCond.Reason == kueue.WorkloadEvictedByPreemption) ||
 			(evCond.Reason == kueue.WorkloadEvictedDueToNodeFailures)
-		updated := workload.SetRequeuedCondition(wl, evCond.Reason, evCond.Message, setRequeued)
-		if workload.UnsetQuotaReservationWithCondition(wl, "Pending", evCond.Message, r.clock.Now()) {
+		updated := workload.SetRequeuedCondition(w, evCond.Reason, evCond.Message, setRequeued)
+		if workload.UnsetQuotaReservationWithCondition(w, "Pending", evCond.Message, r.clock.Now()) {
 			updated = true
 		}
 		return updated, nil
@@ -612,12 +606,13 @@ func (h *clusterQueueHandler) queueReconcileForCQ(object client.Object, q workqu
 // +kubebuilder:rbac:groups=kueue.x-k8s.io,resources=clusterqueues,verbs=get;list;watch
 // +kubebuilder:rbac:groups=kueue.x-k8s.io,resources=workloads,verbs=get;list;watch
 
-func newVariantReconciler(c client.Client, queues *qcache.Manager, cache *schdcache.Cache, recorder record.EventRecorder, roleTracker *roletracker.RoleTracker) *variantReconciler {
+func newVariantReconciler(c client.Client, queues *qcache.Manager, recorder record.EventRecorder, roleTracker *roletracker.RoleTracker) *variantReconciler {
+	// func newVariantReconciler(c client.Client, queues *qcache.Manager, cache *schdcache.Cache, recorder record.EventRecorder, roleTracker *roletracker.RoleTracker) *variantReconciler {
 	return &variantReconciler{
-		logName:     ConcurrentAdmissionController,
-		client:      c,
-		queues:      queues,
-		cache:       cache,
+		logName: ConcurrentAdmissionController,
+		client:  c,
+		queues:  queues,
+		// cache:       cache,
 		recorder:    recorder,
 		roleTracker: roleTracker,
 		clock:       clock.RealClock{},
@@ -628,7 +623,8 @@ func (r *variantReconciler) logger() logr.Logger {
 	return roletracker.WithReplicaRole(ctrl.Log.WithName(r.logName), r.roleTracker)
 }
 
-func (r *variantReconciler) setupWithManager(mgr ctrl.Manager, cache *schdcache.Cache, cfg *configapi.Configuration) (string, error) {
+func (r *variantReconciler) setupWithManager(mgr ctrl.Manager, cfg *configapi.Configuration) (string, error) {
+	// func (r *variantReconciler) setupWithManager(mgr ctrl.Manager, cache *schdcache.Cache, cfg *configapi.Configuration) (string, error) {
 	cqHandler := &clusterQueueHandler{client: r.client, queues: r.queues}
 	return ConcurrentAdmissionController, builder.TypedControllerManagedBy[reconcile.Request](mgr).
 		Named(ConcurrentAdmissionController).
@@ -655,10 +651,13 @@ func (r *variantReconciler) setupWithManager(mgr ctrl.Manager, cache *schdcache.
 		Complete(core.WithLeadingManager(mgr, r, &kueue.Workload{}, cfg))
 }
 
-func SetupControllers(mgr ctrl.Manager, queues *qcache.Manager, cache *schdcache.Cache, cfg *configapi.Configuration, roleTracker *roletracker.RoleTracker) (string, error) {
+func SetupControllers(mgr ctrl.Manager, queues *qcache.Manager, cfg *configapi.Configuration, roleTracker *roletracker.RoleTracker) (string, error) {
+	// func SetupControllers(mgr ctrl.Manager, queues *qcache.Manager, cache *schdcache.Cache, cfg *configapi.Configuration, roleTracker *roletracker.RoleTracker) (string, error) {
 	recorder := mgr.GetEventRecorderFor(ConcurrentAdmissionController)
-	variantRec := newVariantReconciler(mgr.GetClient(), queues, cache, recorder, roleTracker)
-	if ctrlName, err := variantRec.setupWithManager(mgr, cache, cfg); err != nil {
+	variantRec := newVariantReconciler(mgr.GetClient(), queues, recorder, roleTracker)
+	// variantRec := newVariantReconciler(mgr.GetClient(), queues, cache, recorder, roleTracker)
+	if ctrlName, err := variantRec.setupWithManager(mgr, cfg); err != nil {
+		// if ctrlName, err := variantRec.setupWithManager(mgr, cache, cfg); err != nil {
 		return ctrlName, err
 	}
 	return "", nil

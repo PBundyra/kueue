@@ -288,6 +288,9 @@ func (c *ClusterQueue) ConcurrentAdmissionEnabled() bool {
 // PushOrUpdate pushes the workload to ClusterQueue.
 // If the workload is already present, updates with the new one.
 func (c *ClusterQueue) PushOrUpdate(wInfo *workload.Info) {
+	if workload.IsParentVariant(wInfo.Obj) {
+		return
+	}
 	c.rwm.Lock()
 	defer c.rwm.Unlock()
 	key := workload.Key(wInfo.Obj)

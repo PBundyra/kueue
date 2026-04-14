@@ -505,7 +505,8 @@ func setupControllers(ctx context.Context, mgr ctrl.Manager, cCache *schdcache.C
 	}
 
 	// if features.Enabled(features.ConcurrentAdmission) {
-	if failedCtrl, err := concurrentadmission.SetupControllers(mgr, queues, cCache, cfg, roleTracker); err != nil {
+	if failedCtrl, err := concurrentadmission.SetupControllers(mgr, queues, cfg, roleTracker); err != nil {
+		// if failedCtrl, err := concurrentadmission.SetupControllers(mgr, queues, cCache, cfg, roleTracker); err != nil {
 		return fmt.Errorf("could not setup ConcurrentAdmission controller %s: %w", failedCtrl, err)
 	}
 	// }
