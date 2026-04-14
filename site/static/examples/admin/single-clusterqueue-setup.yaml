@@ -51,6 +51,8 @@ metadata:
   name: "cluster-queue-no-concurrent-admission"
 spec:
   namespaceSelector: {} # match all.
+  preemption:
+    withinClusterQueue: LowerPriority
   resourceGroups:
   - coveredResources: ["cpu", "memory"]
     flavors:

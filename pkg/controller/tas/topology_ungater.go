@@ -286,15 +286,15 @@ func (r *topologyUngater) Reconcile(ctx context.Context, req reconcile.Request) 
 }
 
 func (r *topologyUngater) Create(event event.TypedCreateEvent[*kueue.Workload]) bool {
-	return workload.IsAdmittedByTAS(event.Object)
+	return workload.IsAdmittedByTAS(event.Object) && !workload.IsVariant(event.Object)
 }
 
 func (r *topologyUngater) Delete(event event.TypedDeleteEvent[*kueue.Workload]) bool {
-	return workload.IsAdmittedByTAS(event.Object)
+	return workload.IsAdmittedByTAS(event.Object) && !workload.IsVariant(event.Object)
 }
 
 func (r *topologyUngater) Update(event event.TypedUpdateEvent[*kueue.Workload]) bool {
-	return workload.IsAdmittedByTAS(event.ObjectNew)
+	return workload.IsAdmittedByTAS(event.ObjectNew) && !workload.IsVariant(event.ObjectNew)
 }
 
 func (r *topologyUngater) Generic(event.TypedGenericEvent[*kueue.Workload]) bool {

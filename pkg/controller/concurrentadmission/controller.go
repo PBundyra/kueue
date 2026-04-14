@@ -206,7 +206,19 @@ func (r *variantReconciler) deactivateVariant(ctx context.Context, v *kueue.Work
 // deactivateVariants deactivates variants after one of the variants gets admitted.
 // If minTargetFlavor is specified, it deactivates variants that are below the minTargetFlavor in the flavor order.
 // Otherwise it deactivates variants that are below the admitted variant in the flavor order.
-func (r *variantReconciler) deactivateVariants(ctx context.Context, variants []kueue.Workload, cq *kueue.ClusterQueue, flavorOrder map[kueue.ResourceFlavorReference]int) error {
+func (r *variantReconciler) deactivateVariants(ctx context.Context, parent *kueue.Workload, variants []kueue.Workload, cq *kueue.ClusterQueue, flavorOrder map[kueue.ResourceFlavorReference]int) error {
+	// TODO if parent is deactivated, we should deactivate all variants
+	if !workload.IsActive(parent) {
+		r.logger().V(2).Info("Parent is not active, deactivating all variants", "parent", parent.Name)
+		for i := range variants {
+			v := &variants[i]
+			if err := r.deactivateVariant(ctx, v); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	admittedWl := getAdmittedVariant(variants)
 	if admittedWl == nil {
 		r.logger().V(2).Info("No admitted variant, no need to deactivate any variant")
@@ -270,6 +282,7 @@ func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kue
 	if workload.IsFinished(parent) {
 		return r.syncFinished(ctx, parent, variants)
 	}
+	// TODO make sure to support TAS
 
 	admittedVariant := getAdmittedVariant(variants)
 	switch {
@@ -290,17 +303,17 @@ func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kue
 	case admittedVariant != nil && !workload.IsAdmitted(parent):
 		// TODO differentiate what is the case here
 		// Did the parent got evicted and the variant is still admitted with the old variant's admission? e.g. due to waitForPodsReady
-		variantAdmittedCond := apimeta.FindStatusCondition(admittedVariant.Status.Conditions, kueue.WorkloadAdmitted)
-		parentEvictedCond := apimeta.FindStatusCondition(parent.Status.Conditions, kueue.WorkloadEvicted)
+		// variantAdmittedCond := apimeta.FindStatusCondition(admittedVariant.Status.Conditions, kueue.WorkloadAdmitted)
+		// parentEvictedCond := apimeta.FindStatusCondition(parent.Status.Conditions, kueue.WorkloadEvicted)
 
-		evictVariant := false
+		// evictVariant := false
 
-		if apimeta.IsStatusConditionTrue(parent.Status.Conditions, kueue.WorkloadEvicted) {
-			evictVariant = variantAdmittedCond.LastTransitionTime.Before(&parentEvictedCond.LastTransitionTime)
-		}
-		if evictVariant {
-			workload.Evict(ctx, r.client, r.recorder, admittedVariant, parentEvictedCond.Reason, parentEvictedCond.Message, "", r.clock, false, nil, nil, nil)
-		}
+		// if apimeta.IsStatusConditionTrue(parent.Status.Conditions, kueue.WorkloadEvicted) {
+		// 	evictVariant = variantAdmittedCond.LastTransitionTime.Before(&parentEvictedCond.LastTransitionTime)
+		// }
+		// if evictVariant {
+		// 	workload.Evict(ctx, r.client, r.recorder, admittedVariant, parentEvictedCond.Reason, parentEvictedCond.Message, "", r.clock, false, nil, nil, nil)
+		// }
 
 		// variant should not be evicted, parent should be admitted
 
@@ -409,6 +422,7 @@ func (r *variantReconciler) syncVariantEvictionStatus(ctx context.Context, paren
 		evCond := apimeta.FindStatusCondition(v.Status.Conditions, kueue.WorkloadEvicted)
 		if evCond != nil && evCond.Status == metav1.ConditionTrue && workload.HasQuotaReservation(v) {
 			r.logger().V(2).Info("The variant has been evicted, clearing the workload's admission", "variant", v.Name)
+			// TODO maybe just evict Parent
 			if err := r.clearWorkloadAdmission(ctx, v, evCond); err != nil {
 				return fmt.Errorf("clearing variant admission: %w", err)
 			}
@@ -438,11 +452,11 @@ func (r *variantReconciler) syncVariantEvictionStatus(ctx context.Context, paren
 }
 
 func (r *variantReconciler) clearWorkloadAdmission(ctx context.Context, wl *kueue.Workload, evCond *metav1.Condition) error {
-	return workload.PatchAdmissionStatus(ctx, r.client, wl, r.clock, func(w *kueue.Workload) (bool, error) {
+	return workload.PatchAdmissionStatus(ctx, r.client, wl, r.clock, func(wl *kueue.Workload) (bool, error) {
 		setRequeued := (evCond.Reason == kueue.WorkloadEvictedByPreemption) ||
 			(evCond.Reason == kueue.WorkloadEvictedDueToNodeFailures)
-		updated := workload.SetRequeuedCondition(w, evCond.Reason, evCond.Message, setRequeued)
-		if workload.UnsetQuotaReservationWithCondition(w, "Pending", evCond.Message, r.clock.Now()) {
+		updated := workload.SetRequeuedCondition(wl, evCond.Reason, evCond.Message, setRequeued)
+		if workload.UnsetQuotaReservationWithCondition(wl, "Pending", evCond.Message, r.clock.Now()) {
 			updated = true
 		}
 		return updated, nil
@@ -513,7 +527,7 @@ func (r *variantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	log.V(2).Info("Deactivating variants if needed")
-	if err := r.deactivateVariants(ctx, variants, cq, flavorOrder); err != nil {
+	if err := r.deactivateVariants(ctx, parent, variants, cq, flavorOrder); err != nil {
 		r.logger().V(2).Info("Failed to deactivate variants", "error", err)
 		return ctrl.Result{}, err
 	}
