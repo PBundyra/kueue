@@ -229,6 +229,74 @@ func TestReconcile(t *testing.T) {
 			wantResult: reconcile.Result{},
 			wantErr:    false,
 		},
+		"parent admitted on spot but on-demand variant is admitted; overrule with on-demand": {
+			parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+				Queue("lq").
+				Request(corev1.ResourceCPU, "1").
+				Label(workload.ParentVariantLabel, "true").
+				SimpleReserveQuota("cq", "spot", metav1.Now().Time).
+				AdmittedAt(true, metav1.Now().Time).
+				Obj(),
+			variantWorkloads: []kueue.Workload{
+				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
+					Queue("lq").
+					Request(corev1.ResourceCPU, "1").
+					AllowedFlavors("spot").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					Obj(),
+				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
+					Queue("lq").
+					Request(corev1.ResourceCPU, "1").
+					AllowedFlavors("on-demand").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					SimpleReserveQuota("cq", "on-demand", metav1.Now().Time).
+					AdmittedAt(true, metav1.Now().Time).
+					Obj(),
+			},
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+				Queue("lq").
+				Request(corev1.ResourceCPU, "1").
+				Label(workload.ParentVariantLabel, "true").
+				Admission(utiltestingapi.MakeAdmission("cq", "main").
+					PodSets(kueue.PodSetAssignment{
+						Name: "main",
+						Flavors: map[corev1.ResourceName]kueue.ResourceFlavorReference{
+							corev1.ResourceCPU: "on-demand",
+						},
+						Count:         ptr.To[int32](1),
+						ResourceUsage: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+					}).Obj()).
+				Condition(metav1.Condition{
+					Type:    kueue.WorkloadAdmitted,
+					Status:  metav1.ConditionTrue,
+					Reason:  "ByTest",
+					Message: "Admitted by ClusterQueue cq",
+				}).
+				Condition(metav1.Condition{
+					Type:    kueue.WorkloadQuotaReserved,
+					Status:  metav1.ConditionTrue,
+					Reason:  "QuotaReserved",
+					Message: "Quota reserved in ClusterQueue cq",
+				}).
+				Obj(),
+			wantVariantWorkloads: []kueue.Workload{
+				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
+					Queue("lq").
+					Request(corev1.ResourceCPU, "1").
+					AllowedFlavors("spot").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					Active(false).
+					Obj(),
+				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
+					Queue("lq").
+					Request(corev1.ResourceCPU, "1").
+					AllowedFlavors("on-demand").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					SimpleReserveQuota("cq", "on-demand", metav1.Now().Time).
+					AdmittedAt(true, metav1.Now().Time).
+					Obj(),
+			},
+		},
 		// "evicted variant clears admission on parent": {
 		// 	parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
 		// 		Queue("lq").
