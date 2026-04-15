@@ -363,7 +363,7 @@ func (s *Scheduler) schedule(ctx context.Context) wait.SpeedSignal {
 		// Note: it is valid for either or both preemptionTargets and oldWorkloadSlice to be nil.
 		preemptionTargets, oldWorkloadSlice := workloadslicing.FindReplacedSliceTarget(e.Obj, e.preemptionTargets)
 
-		if e.assignment.RepresentativeMode() == flavorassigner.Preempt || len(preemptionTargets) > 0 {
+		if e.assignment.RepresentativeMode() == flavorassigner.Preempt {
 			// If preemptions are issued, the next attempt should try all the flavors.
 			e.LastAssignment = nil
 			preempted, errors, err := s.preemptor.IssuePreemptions(ctx, s.cache, &e.Info, preemptionTargets, e.clusterQueueSnapshot)
@@ -583,58 +583,6 @@ func (s *Scheduler) getAssignments(log logr.Logger, wl *workload.Info, snap *sch
 	return assignment, targets
 }
 
-func findLessFavorableSiblingVariants(wl *workload.Info, cq *schdcache.ClusterQueueSnapshot) []*preemption.Target {
-	var targets []*preemption.Target
-	if !workload.IsVariant(wl.Obj) {
-		return targets
-	}
-	var parentName string
-	for _, owner := range wl.Obj.OwnerReferences {
-		if owner.Kind == kueue.SchemeGroupVersion.WithKind("Workload").Kind && owner.APIVersion == kueue.SchemeGroupVersion.String() {
-			parentName = owner.Name
-			break
-		}
-	}
-
-	// Assume we only check the first ResourceGroup for simplicity:
-	flvOrder := make(map[kueue.ResourceFlavorReference]int)
-	for idx, flvObj := range cq.ResourceGroups[0].Flavors {
-		flvOrder[flvObj] = idx
-	}
-
-	targetFlvIdx, ok := flvOrder[wl.Obj.Spec.AdmissionConstraints.AllowedResourceFlavors[0]]
-	if !ok {
-		return targets
-	}
-
-	for _, cand := range cq.Workloads {
-		if cand.Obj.UID == wl.Obj.UID || !workload.IsAdmitted(cand.Obj) || !workload.IsVariant(cand.Obj) {
-			continue
-		}
-		fmt.Println("Checking cand:", cand.Obj.Name, "against wl:", wl.Obj.Name); isSibling := false
-		for _, owner := range cand.Obj.OwnerReferences {
-			if owner.Kind == kueue.SchemeGroupVersion.WithKind("Workload").Kind && owner.Name == parentName {
-				isSibling = true
-				break
-			}
-		}
-		fmt.Println("Is Sibling? ", cand.Obj.Name, isSibling); if !isSibling {
-			continue
-		}
-
-		runningFlv := cand.Obj.Spec.AdmissionConstraints.AllowedResourceFlavors[0]
-		if runningIdx, found := flvOrder[runningFlv]; found && runningIdx > targetFlvIdx {
-			fmt.Println("Adding to targets: ", cand.Obj.Name)
-			targets = append(targets, &preemption.Target{
-				WorkloadInfo: cand,
-				Reason:       "SiblingVariantEviction",
-				WorkloadCq:   cq,
-			})
-		}
-	}
-	return targets
-}
-
 // getInitialAssignments computes the initial resource flavor assignment and any required preemption targets
 // for a workload slice.
 //
@@ -661,10 +609,6 @@ func (s *Scheduler) getInitialAssignments(log logr.Logger, wl *workload.Info, sn
 	cq := snap.ClusterQueue(wl.ClusterQueue)
 
 	preemptionTargets, replaceableWorkloadSlice := workloadslicing.ReplacedWorkloadSlice(wl, snap)
-
-	if siblingTargets := findLessFavorableSiblingVariants(wl, cq); len(siblingTargets) > 0 {
-		preemptionTargets = append(preemptionTargets, siblingTargets...)
-	}
 
 	flvAssigner := flavorassigner.New(wl, cq, snap.ResourceFlavors, fairsharing.Enabled(s.fairSharing), preemption.NewOracle(s.preemptor, snap), replaceableWorkloadSlice)
 	fullAssignment := flvAssigner.Assign(log, nil)

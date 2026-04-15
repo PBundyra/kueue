@@ -5785,83 +5785,8 @@ func TestSchedule(t *testing.T) {
 				"eng-beta": {"eng-beta/preemptor"},
 			},
 		},
-		"preempt lower priority sibling variant": {
-			workloads: []kueue.Workload{
-				*utiltestingapi.MakeWorkload("incoming-variant", "eng-beta").
-					Queue("main").
-					UID("incoming-variant").
-					Request(corev1.ResourceCPU, "1").
-					AllowedFlavors("on-demand").
-					OwnerReference(kueue.SchemeGroupVersion.WithKind("Workload"), "parent-job", "").
-					Obj(),
-				*utiltestingapi.MakeWorkload("running-variant", "eng-beta").
-					Request(corev1.ResourceCPU, "1").
-					AllowedFlavors("spot").
-					OwnerReference(kueue.SchemeGroupVersion.WithKind("Workload"), "parent-job", "").
-					ReserveQuotaAt(utiltestingapi.MakeAdmission("eng-beta").
-						PodSets(utiltestingapi.MakePodSetAssignment(kueue.DefaultPodSetName).
-							Assignment(corev1.ResourceCPU, "spot", "1000m").
-							Obj()).
-						Obj(), now).
-					AdmittedAt(true, now).
-					Obj(),
-			},
-			wantWorkloads: []kueue.Workload{
-				*utiltestingapi.MakeWorkload("incoming-variant", "eng-beta").
-					Queue("main").
-					UID("incoming-variant").
-					Request(corev1.ResourceCPU, "1").
-					AllowedFlavors("on-demand").
-					OwnerReference(kueue.SchemeGroupVersion.WithKind("Workload"), "parent-job", "").
-					ReserveQuotaAt(utiltestingapi.MakeAdmission("eng-beta").
-						PodSets(utiltestingapi.MakePodSetAssignment(kueue.DefaultPodSetName).
-							Assignment(corev1.ResourceCPU, "on-demand", "1").
-							Count(1).
-							Obj()).
-						Obj(), now).
-					Condition(metav1.Condition{
-						Type:               kueue.WorkloadAdmitted,
-						Status:             metav1.ConditionTrue,
-						Reason:             "Admitted",
-						Message:            "The workload is admitted",
-						LastTransitionTime: metav1.NewTime(now),
-					}).
-					Obj(),
-				*utiltestingapi.MakeWorkload("running-variant", "eng-beta").
-					Request(corev1.ResourceCPU, "1").
-					AllowedFlavors("spot").
-					OwnerReference(kueue.SchemeGroupVersion.WithKind("Workload"), "parent-job", "").
-					ReserveQuotaAt(utiltestingapi.MakeAdmission("eng-beta").
-						PodSets(utiltestingapi.MakePodSetAssignment(kueue.DefaultPodSetName).
-							Assignment(corev1.ResourceCPU, "spot", "1000m").
-							Obj()).
-						Obj(), now).
-					Condition(metav1.Condition{
-						Type:               kueue.WorkloadPreempted,
-						Status:             metav1.ConditionTrue,
-						Reason:             "SiblingVariantEviction",
-						LastTransitionTime: metav1.NewTime(now),
-					}).
-					SchedulingStatsEviction(kueue.WorkloadSchedulingStatsEviction{Reason: "Preempted", Count: 1}).
-					Obj(),
-			},
-			wantAssignments: map[workload.Reference]kueue.Admission{
-				"eng-beta/incoming-variant": {
-					ClusterQueue: "eng-beta",
-					PodSetAssignments: []kueue.PodSetAssignment{
-						utiltestingapi.MakePodSetAssignment("main").
-							Assignment(corev1.ResourceCPU, "on-demand", "1000m").
-							Count(1).
-							Obj(),
-					},
-				},
-			},
-		},
 	}
 	for name, tc := range cases {
-		if name != "preempt lower priority sibling variant" {
-			continue
-		}
 		for _, enabled := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s WorkloadRequestUseMergePatch enabled: %t", name, enabled), func(t *testing.T) {
 				features.SetFeatureGateDuringTest(t, features.WorkloadRequestUseMergePatch, enabled)
