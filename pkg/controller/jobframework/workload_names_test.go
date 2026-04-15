@@ -17,6 +17,7 @@ limitations under the License.
 package jobframework
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -243,6 +244,128 @@ func TestGenerateWorkloadNameWithGeneration(t *testing.T) {
 		nameFromExtra := GenerateWorkloadNameWithExtra("my-job", "uid-123", gvk, "42")
 		if diff := cmp.Diff(nameFromGeneration, nameFromExtra); diff != "" {
 			t.Errorf("GenerateWorkloadNameWithGeneration and GenerateWorkloadNameWithExtra should produce same result (-want,+got):\n%s", diff)
+		}
+	})
+}
+
+func TestGetWorkloadNameForVariant(t *testing.T) {
+	gvk := schema.GroupVersionKind{Group: "batch", Version: "v1", Kind: "Job"}
+
+	cases := map[string]struct {
+		featureGates map[featuregate.Feature]bool
+		ownerName    string
+		ownerUID     types.UID
+		ownerGVK     schema.GroupVersionKind
+		flavor       string
+		want         string
+	}{
+		"simple flavor": {
+			ownerName: "my-job",
+			ownerUID:  "uid-123",
+			ownerGVK:  gvk,
+			flavor:    "spot",
+			// Using actual value from test output
+			want:      "job-my-job-spot-73286",
+		},
+		"flavor name exceeding max length (ShortWorkloadNames=false)": {
+			featureGates: map[featuregate.Feature]bool{
+				features.ShortWorkloadNames: false,
+			},
+			ownerName: "my-job",
+			ownerUID:  "uid-123",
+			ownerGVK:  gvk,
+			flavor:    strings.Repeat("a", 300),
+			want:      "job-my-job-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-dbc57",
+		},
+		"flavor name exceeding max length (ShortWorkloadNames=true)": {
+			featureGates: map[featuregate.Feature]bool{
+				features.ShortWorkloadNames: true,
+			},
+			ownerName: "my-job",
+			ownerUID:  "uid-123",
+			ownerGVK:  gvk,
+			flavor:    strings.Repeat("a", 300),
+			want:      "job-my-job-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-dbc57",
+		},
+		"empty flavor": {
+			ownerName: "my-job",
+			ownerUID:  "uid-123",
+			ownerGVK:  gvk,
+			flavor:    "",
+			// Using actual value from test output
+			want:      "job-my-job--cd350",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			for fg, enabled := range tc.featureGates {
+				features.SetFeatureGateDuringTest(t, fg, enabled)
+			}
+			got := GetWorkloadNameForVariant(tc.ownerName, tc.ownerUID, tc.ownerGVK, tc.flavor)
+			if tc.want != "" {
+				if diff := cmp.Diff(tc.want, got); len(diff) != 0 {
+					t.Fatalf("Unexpected workloadName (-want,+got):\n%s", diff)
+				}
+			}
+			prefix := GenerateWorkloadNamePrefix(tc.ownerName, tc.ownerUID, tc.ownerGVK)
+			prefixWithFlavor := truncate(fmt.Sprintf("%s-%s", prefix, tc.flavor), maxPrefixLength())
+			wantLength := len(prefixWithFlavor) + 1 + hashLength
+			if len(got) != wantLength {
+				t.Errorf("GetWorkloadNameForVariant() length = %d, want %d", len(got), wantLength)
+			}
+		})
+	}
+
+	equalityCases := map[string]struct {
+		flavor1   string
+		flavor2   string
+		wantEqual bool
+	}{
+		"different flavors produce different names": {
+			flavor1:   "flavor1",
+			flavor2:   "flavor2",
+			wantEqual: false,
+		},
+		"same flavor produces same name": {
+			flavor1:   "flavor-x",
+			flavor2:   "flavor-x",
+			wantEqual: true,
+		},
+	}
+
+	for name, tc := range equalityCases {
+		t.Run(name, func(t *testing.T) {
+			name1 := GetWorkloadNameForVariant("my-job", "uid-123", gvk, tc.flavor1)
+			name2 := GetWorkloadNameForVariant("my-job", "uid-123", gvk, tc.flavor2)
+			if tc.wantEqual {
+				if diff := cmp.Diff(name1, name2); diff != "" {
+					t.Errorf("expected same names (-want,+got):\n%s", diff)
+				}
+			} else {
+				if name1 == name2 {
+					t.Errorf("expected different names for different flavors, got %q for both", name1)
+				}
+			}
+		})
+	}
+
+	t.Run("parent name exceeding max length with different flavors have same prefix but different hashes", func(t *testing.T) {
+		ownerName := strings.Repeat("a", 300)
+		uid := types.UID("uid-123")
+		
+		name1 := GetWorkloadNameForVariant(ownerName, uid, gvk, "flavor1")
+		name2 := GetWorkloadNameForVariant(ownerName, uid, gvk, "flavor2")
+
+		prefix1 := name1[:len(name1)-hashLength-1]
+		prefix2 := name2[:len(name2)-hashLength-1]
+
+		if prefix1 != prefix2 {
+			t.Errorf("prefixes should be identical, got %q and %q", prefix1, prefix2)
+		}
+
+		if name1 == name2 {
+			t.Errorf("total names should be different because hashes differ, got %q for both", name1)
 		}
 	})
 }

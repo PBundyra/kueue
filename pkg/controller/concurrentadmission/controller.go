@@ -43,8 +43,10 @@ import (
 	configapi "sigs.k8s.io/kueue/apis/config/v1beta2"
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	qcache "sigs.k8s.io/kueue/pkg/cache/queue"
+
 	// schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
 	"sigs.k8s.io/kueue/pkg/controller/core"
+	"sigs.k8s.io/kueue/pkg/controller/jobframework"
 	"sigs.k8s.io/kueue/pkg/util/roletracker"
 	utilslices "sigs.k8s.io/kueue/pkg/util/slices"
 	"sigs.k8s.io/kueue/pkg/workload"
@@ -384,7 +386,7 @@ func (r *variantReconciler) hasVariantWithFlavor(variants []kueue.Workload, flav
 func generateVariant(parent *kueue.Workload, flavor kueue.ResourceFlavorReference) *kueue.Workload {
 	variant := &kueue.Workload{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:          fmt.Sprintf("%s-variant-%s", parent.Name, flavor),
+			Name:          jobframework.GetWorkloadNameForVariant(parent.Name, parent.UID, parent.GroupVersionKind(), string(flavor)),
 			Namespace:     parent.Namespace,
 			Labels:        parent.Labels,
 			Annotations:   parent.Annotations,
@@ -498,11 +500,6 @@ func (r *variantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// TODO: compare the flavors of the variants with the flavors in the cluster queue and not just the number of variants,
 	//  to cover the case when the cluster queue got updated with a different set of flavors, or when the flavors in the cluster queue got reduced,
 	//  so we need to delete the excess variants that are not in the cluster queue flavors anymore, or that are above the number of flavors in the cluster queue
-	if len(variants) > len(flavorOrder) {
-		// This can happen when the flavors in the cluster queue got reduced, or when the cluster queue got updated with a different set of flavors,
-		// so we need to delete the excess variants that are not in the cluster queue flavors anymore, or that are above the number of flavors in the cluster queue
-		log.V(2).Info("Too many variants, deleting the excess ones", "desired", len(flavorOrder), "actual", len(variants))
-	}
 	if len(variants) < len(flavorOrder) {
 		// TODO: change into checking each flavor instead of sum
 		log.V(2).Info("Too few variants, creating new ones", "desired", len(flavorOrder), "actual", len(variants))

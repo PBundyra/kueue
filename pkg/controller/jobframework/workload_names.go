@@ -65,6 +65,14 @@ func GetWorkloadNameForOwnerWithGVK(ownerName string, ownerUID types.UID, ownerG
 	return GenerateWorkloadNameWithExtra(ownerName, ownerUID, ownerGVK, "")
 }
 
+func GetWorkloadNameForVariant(ownerName string, ownerUID types.UID, ownerGVK schema.GroupVersionKind, flavor string) string {
+	prefix := GenerateWorkloadNamePrefix(ownerName, ownerUID, ownerGVK)
+	prefixWithFlavor := truncate(fmt.Sprintf("%s-%s", prefix, flavor), maxPrefixLength())
+	hash := getHash(ownerName, ownerUID, ownerGVK, flavor)[:hashLength]
+	return fmt.Sprintf("%s-%s", prefixWithFlavor, hash)
+
+}
+
 func GenerateWorkloadNamePrefix(ownerName string, ownerUID types.UID, ownerGVK schema.GroupVersionKind) string {
 	return truncate(strings.ToLower(ownerGVK.Kind)+"-"+ownerName, maxPrefixLength())
 }
