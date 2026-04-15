@@ -65,10 +65,13 @@ func GetWorkloadNameForOwnerWithGVK(ownerName string, ownerUID types.UID, ownerG
 	return GenerateWorkloadNameWithExtra(ownerName, ownerUID, ownerGVK, "")
 }
 
-func GetWorkloadNameForVariant(ownerName string, ownerUID types.UID, ownerGVK schema.GroupVersionKind, flavor string) string {
-	prefix := GenerateWorkloadNamePrefix(ownerName, ownerUID, ownerGVK)
-	prefixWithFlavor := truncate(fmt.Sprintf("%s-%s", prefix, flavor), maxPrefixLength())
-	hash := getHash(ownerName, ownerUID, ownerGVK, flavor)[:hashLength]
+func GetWorkloadNameForVariant(parentName string, ownerUID types.UID, ownerGVK schema.GroupVersionKind, flavor string) string {
+	// delete the existing hash from parentName
+	prefix := parentName[:strings.LastIndex(parentName, "-")]
+	// add flavor
+	prefixWithFlavor := truncate(fmt.Sprintf("%s-variant-%s", prefix, flavor), maxPrefixLength())
+	// get unique hash - parentName has already hash that includes Job's GVK so it won't colide in case different kinds of Job have the same name
+	hash := getHash(parentName, ownerUID, ownerGVK, flavor)[:hashLength]
 	return fmt.Sprintf("%s-%s", prefixWithFlavor, hash)
 
 }

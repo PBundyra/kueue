@@ -1923,6 +1923,28 @@ func IsVariant(workload *kueue.Workload) bool {
 	return IsOwnedByAWorkload(workload)
 }
 
+func GetParentVariant(workload *kueue.Workload) string {
+	if workload == nil {
+		return ""
+	}
+	for _, owner := range workload.OwnerReferences {
+		if owner.Kind == "Workload" && owner.APIVersion == "kueue.x-k8s.io/v1beta2" {
+			return owner.Name
+		}
+	}
+	return ""
+}
+
+func GetAdmittedVariant(variants []kueue.Workload) *kueue.Workload {
+	for i := range variants {
+		v := &variants[i]
+		if IsAdmitted(v) {
+			return v
+		}
+	}
+	return nil
+}
+
 func IsOwnedByAWorkload(workload *kueue.Workload) bool {
 	if workload == nil {
 		return false

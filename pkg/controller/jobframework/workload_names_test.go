@@ -253,47 +253,38 @@ func TestGetWorkloadNameForVariant(t *testing.T) {
 
 	cases := map[string]struct {
 		featureGates map[featuregate.Feature]bool
-		ownerName    string
+		parentName   string
 		ownerUID     types.UID
 		ownerGVK     schema.GroupVersionKind
 		flavor       string
 		want         string
 	}{
 		"simple flavor": {
-			ownerName: "my-job",
-			ownerUID:  "uid-123",
-			ownerGVK:  gvk,
-			flavor:    "spot",
-			// Using actual value from test output
-			want:      "job-my-job-spot-73286",
+			parentName: "job-my-job-12345",
+			ownerUID:   "uid-123",
+			ownerGVK:   gvk,
+			flavor:     "spot",
+			want:       "job-my-job-variant-spot-6320b",
 		},
 		"flavor name exceeding max length (ShortWorkloadNames=false)": {
 			featureGates: map[featuregate.Feature]bool{
 				features.ShortWorkloadNames: false,
 			},
-			ownerName: "my-job",
-			ownerUID:  "uid-123",
-			ownerGVK:  gvk,
-			flavor:    strings.Repeat("a", 300),
-			want:      "job-my-job-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-dbc57",
+			parentName: "job-my-job-12345",
+			ownerUID:   "uid-123",
+			ownerGVK:   gvk,
+			flavor:     strings.Repeat("a", 300),
+			want:       "job-my-job-variant-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-2e907",
 		},
 		"flavor name exceeding max length (ShortWorkloadNames=true)": {
 			featureGates: map[featuregate.Feature]bool{
 				features.ShortWorkloadNames: true,
 			},
-			ownerName: "my-job",
-			ownerUID:  "uid-123",
-			ownerGVK:  gvk,
-			flavor:    strings.Repeat("a", 300),
-			want:      "job-my-job-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-dbc57",
-		},
-		"empty flavor": {
-			ownerName: "my-job",
-			ownerUID:  "uid-123",
-			ownerGVK:  gvk,
-			flavor:    "",
-			// Using actual value from test output
-			want:      "job-my-job--cd350",
+			parentName: "job-my-job-12345",
+			ownerUID:   "uid-123",
+			ownerGVK:   gvk,
+			flavor:     strings.Repeat("a", 300),
+			want:       "job-my-job-variant-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-2e907",
 		},
 	}
 
@@ -302,14 +293,14 @@ func TestGetWorkloadNameForVariant(t *testing.T) {
 			for fg, enabled := range tc.featureGates {
 				features.SetFeatureGateDuringTest(t, fg, enabled)
 			}
-			got := GetWorkloadNameForVariant(tc.ownerName, tc.ownerUID, tc.ownerGVK, tc.flavor)
+			got := GetWorkloadNameForVariant(tc.parentName, tc.ownerUID, tc.ownerGVK, tc.flavor)
 			if tc.want != "" {
 				if diff := cmp.Diff(tc.want, got); len(diff) != 0 {
 					t.Fatalf("Unexpected workloadName (-want,+got):\n%s", diff)
 				}
 			}
-			prefix := GenerateWorkloadNamePrefix(tc.ownerName, tc.ownerUID, tc.ownerGVK)
-			prefixWithFlavor := truncate(fmt.Sprintf("%s-%s", prefix, tc.flavor), maxPrefixLength())
+			parentPrefix := tc.parentName[:strings.LastIndex(tc.parentName, "-")]
+			prefixWithFlavor := truncate(fmt.Sprintf("%s-variant-%s", parentPrefix, tc.flavor), maxPrefixLength())
 			wantLength := len(prefixWithFlavor) + 1 + hashLength
 			if len(got) != wantLength {
 				t.Errorf("GetWorkloadNameForVariant() length = %d, want %d", len(got), wantLength)
@@ -336,8 +327,8 @@ func TestGetWorkloadNameForVariant(t *testing.T) {
 
 	for name, tc := range equalityCases {
 		t.Run(name, func(t *testing.T) {
-			name1 := GetWorkloadNameForVariant("my-job", "uid-123", gvk, tc.flavor1)
-			name2 := GetWorkloadNameForVariant("my-job", "uid-123", gvk, tc.flavor2)
+			name1 := GetWorkloadNameForVariant("job-my-job-12345", "uid-123", gvk, tc.flavor1)
+			name2 := GetWorkloadNameForVariant("job-my-job-12345", "uid-123", gvk, tc.flavor2)
 			if tc.wantEqual {
 				if diff := cmp.Diff(name1, name2); diff != "" {
 					t.Errorf("expected same names (-want,+got):\n%s", diff)
@@ -351,11 +342,11 @@ func TestGetWorkloadNameForVariant(t *testing.T) {
 	}
 
 	t.Run("parent name exceeding max length with different flavors have same prefix but different hashes", func(t *testing.T) {
-		ownerName := strings.Repeat("a", 300)
+		parentName := "job-" + strings.Repeat("a", 300) + "-12345"
 		uid := types.UID("uid-123")
 		
-		name1 := GetWorkloadNameForVariant(ownerName, uid, gvk, "flavor1")
-		name2 := GetWorkloadNameForVariant(ownerName, uid, gvk, "flavor2")
+		name1 := GetWorkloadNameForVariant(parentName, uid, gvk, "flavor1")
+		name2 := GetWorkloadNameForVariant(parentName, uid, gvk, "flavor2")
 
 		prefix1 := name1[:len(name1)-hashLength-1]
 		prefix2 := name2[:len(name2)-hashLength-1]

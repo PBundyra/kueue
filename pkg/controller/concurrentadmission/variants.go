@@ -52,15 +52,3 @@ func isOwnedByAWorkload(workload *kueue.Workload) bool {
 	}
 	return false
 }
-
-func getParentVariant(workload *kueue.Workload) string {
-	if workload == nil {
-		return ""
-	}
-	for _, owner := range workload.OwnerReferences {
-		if owner.Kind == "Workload" && owner.APIVersion == "kueue.x-k8s.io/v1beta2" {
-			return owner.Name
-		}
-	}
-	return ""
-}
