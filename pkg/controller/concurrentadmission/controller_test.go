@@ -62,6 +62,11 @@ func TestReconcile(t *testing.T) {
 			*utiltestingapi.MakeFlavorQuotas("on-demand").Obj(),
 			*utiltestingapi.MakeFlavorQuotas("spot").Obj(),
 		).Obj()
+	defaultCQ.Spec.ConcurrentAdmission = &kueue.ConcurrentAdmission{
+		MigrationConstraints: kueue.ConcurrentAdmissionMigrationConstraints{
+			MinTargetFlavor: ptr.To(kueue.ResourceFlavorReference("reservation")),
+		},
+	}
 	defaultLQ := utiltestingapi.MakeLocalQueue("lq", "default").ClusterQueue("cq").Obj()
 
 	migrationCQ := utiltestingapi.MakeClusterQueue("cq-migration").
@@ -112,31 +117,31 @@ func TestReconcile(t *testing.T) {
 			wantErr:            false,
 		},
 		"parent workload without variants creates them": {
-			parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq").
 				Label(workload.ParentVariantLabel, "true").
 				Obj(),
-			wantParentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq").
 				Label(workload.ParentVariantLabel, "true").
 				Obj(),
 			wantVariantWorkloads: []kueue.Workload{
-				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
+				*utiltestingapi.MakeWorkload("parent-variant-spot-545ad", "default").
 					Queue("lq").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", ""). // UID is ignored in cmp
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", ""). // UID is ignored in cmp
 					Obj(),
-				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
+				*utiltestingapi.MakeWorkload("parent-variant-on-demand-39893", "default").
 					Queue("lq").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 			},
 			wantResult: reconcile.Result{},
 			wantErr:    false,
 		},
 		"parent workload with missing variants; creates missing": {
-			parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq").
 				Label(workload.ParentVariantLabel, "true").
 				Obj(),
@@ -144,10 +149,10 @@ func TestReconcile(t *testing.T) {
 				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
 					Queue("lq").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", ""). // UID is ignored in cmp
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", ""). // UID is ignored in cmp
 					Obj(),
 			},
-			wantParentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq").
 				Label(workload.ParentVariantLabel, "true").
 				Obj(),
@@ -155,19 +160,19 @@ func TestReconcile(t *testing.T) {
 				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
 					Queue("lq").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", ""). // UID is ignored in cmp
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", ""). // UID is ignored in cmp
 					Obj(),
-				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
+				*utiltestingapi.MakeWorkload("parent-variant-on-demand-39893", "default").
 					Queue("lq").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 			},
 			wantResult: reconcile.Result{},
 			wantErr:    false,
 		},
 		"admitted variant syncs admission to parent": {
-			parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq").
 				Label(workload.ParentVariantLabel, "true").
 				Obj(),
@@ -176,17 +181,17 @@ func TestReconcile(t *testing.T) {
 					Queue("lq").
 					AllowedFlavors("spot").
 					Request(corev1.ResourceCPU, "1").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq", "spot", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
 					Queue("lq").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 			},
-			wantParentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq").
 				Label(workload.ParentVariantLabel, "true").
 				Admission(utiltestingapi.MakeAdmission("cq", "main").
@@ -216,21 +221,21 @@ func TestReconcile(t *testing.T) {
 					Queue("lq").
 					AllowedFlavors("spot").
 					Request(corev1.ResourceCPU, "1").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq", "spot", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
 					Queue("lq").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 			},
 			wantResult: reconcile.Result{},
 			wantErr:    false,
 		},
 		"parent admitted on spot but on-demand variant is admitted; overrule with on-demand": {
-			parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -242,18 +247,18 @@ func TestReconcile(t *testing.T) {
 					Queue("lq").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
 					Queue("lq").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq", "on-demand", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
 					Obj(),
 			},
-			wantParentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -284,21 +289,21 @@ func TestReconcile(t *testing.T) {
 					Queue("lq").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Active(false).
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
 					Queue("lq").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq", "on-demand", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
 					Obj(),
 			},
 		},
 		// "evicted variant clears admission on parent": {
-		// 	parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+		// 	parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 		// 		Queue("lq").
 		// 		Label(workload.ParentVariantLabel, "true").
 		// 		SimpleReserveQuota("cq", "spot", metav1.Now().Time).
@@ -309,15 +314,15 @@ func TestReconcile(t *testing.T) {
 		// 			Queue("lq").
 		// 			AllowedFlavors("spot").
 		// 			Request(corev1.ResourceCPU, "1").
-		// 			ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+		// 			ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 		// 			Obj(),
 		// 		*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
 		// 			Queue("lq").
 		// 			AllowedFlavors("on-demand").
-		// 			ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+		// 			ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 		// 			Obj(),
 		// 	},
-		// 	wantParentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+		// 	wantParentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 		// 		Queue("lq").
 		// 		Label(workload.ParentVariantLabel, "true").
 		// 		// We expect Admission to NOT be cleared due to fake client SSA limitations
@@ -340,19 +345,19 @@ func TestReconcile(t *testing.T) {
 		// 			Queue("lq").
 		// 			AllowedFlavors("spot").
 		// 			Request(corev1.ResourceCPU, "1").
-		// 			ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+		// 			ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 		// 			Obj(),
 		// 		*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
 		// 			Queue("lq").
 		// 			AllowedFlavors("on-demand").
-		// 			ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+		// 			ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 		// 			Obj(),
 		// 	},
 		// 	wantResult: reconcile.Result{},
 		// 	wantErr:    false,
 		// },
 		"admitted variant evicted; clear its reservation; activate all variants": {
-			parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq").
 				Label(workload.ParentVariantLabel, "true").
 				Request(corev1.ResourceCPU, "1").
@@ -363,7 +368,7 @@ func TestReconcile(t *testing.T) {
 				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
 					Queue("lq").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Request(corev1.ResourceCPU, "1").
 					SimpleReserveQuota("cq", "spot", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
@@ -379,11 +384,11 @@ func TestReconcile(t *testing.T) {
 					Queue("lq").
 					AllowedFlavors("on-demand").
 					Request(corev1.ResourceCPU, "1").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Active(false).
 					Obj(),
 			},
-			wantParentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -406,7 +411,7 @@ func TestReconcile(t *testing.T) {
 					Queue("lq").
 					AllowedFlavors("spot").
 					Request(corev1.ResourceCPU, "1").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq", "spot", metav1.Now().Time).
 					Condition(metav1.Condition{
 						Type:    kueue.WorkloadQuotaReserved,
@@ -438,7 +443,7 @@ func TestReconcile(t *testing.T) {
 					Queue("lq").
 					AllowedFlavors("on-demand").
 					Request(corev1.ResourceCPU, "1").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Active(true).
 					Obj(),
 			},
@@ -446,7 +451,7 @@ func TestReconcile(t *testing.T) {
 			wantErr:    false,
 		},
 		"with minTargetFlavor=reservation, variant admitted on spot, deactivate on-demand": {
-			parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq-migration").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -456,24 +461,24 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration").
 					AllowedFlavors("reservation").
 					Request(corev1.ResourceCPU, "1").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
 					Queue("lq-migration").
 					AllowedFlavors("on-demand").
 					Request(corev1.ResourceCPU, "1").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
 					Queue("lq-migration").
 					AllowedFlavors("spot").
 					Request(corev1.ResourceCPU, "1").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq-migration", "spot", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
 					Obj(),
 			},
-			wantParentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq-migration").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -504,27 +509,27 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("reservation").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
 					Queue("lq-migration").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Active(false).
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
 					Queue("lq-migration").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq-migration", "spot", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
 					Obj(),
 			},
 		},
 		"with minTargetFlavor=reservation, variant admitted on on-demand, deactivate spot": {
-			parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq-migration").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -534,13 +539,13 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("reservation").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
 					Queue("lq-migration").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq-migration", "on-demand", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
 					Obj(),
@@ -548,10 +553,10 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 			},
-			wantParentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq-migration").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -582,13 +587,13 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("reservation").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
 					Queue("lq-migration").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq-migration", "on-demand", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
 					Obj(),
@@ -596,13 +601,13 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Active(false).
 					Obj(),
 			},
 		},
 		"with minTargetFlavor=reservation, variant admitted on reservation, deactivate spot and on-demand": {
-			parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq-migration").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -612,7 +617,7 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("reservation").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq-migration", "reservation", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
 					Obj(),
@@ -620,16 +625,16 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
 					Queue("lq-migration").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 			},
-			wantParentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq-migration").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -660,7 +665,7 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("reservation").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq-migration", "reservation", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
 					Obj(),
@@ -668,20 +673,20 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Active(false).
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
 					Queue("lq-migration").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Active(false).
 					Obj(),
 			},
 		},
 		"without minTargetFlavor, variant admitted on spot, nothing deactivated": {
-			parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq-migration-no-constraint").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -691,24 +696,24 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("reservation").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq-migration-no-constraint", "spot", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
 					Obj(),
 			},
-			wantParentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq-migration-no-constraint").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -739,26 +744,26 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("reservation").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq-migration-no-constraint", "spot", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
 					Obj(),
 			},
 		},
 		"without minTargetFlavor, variant admitted on on-demand, deactivate spot": {
-			parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq-migration-no-constraint").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -768,13 +773,13 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("reservation").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq-migration-no-constraint", "on-demand", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
 					Obj(),
@@ -782,10 +787,10 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 			},
-			wantParentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq-migration-no-constraint").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -816,13 +821,13 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("reservation").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq-migration-no-constraint", "on-demand", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
 					Obj(),
@@ -830,13 +835,13 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Active(false).
 					Obj(),
 			},
 		},
 		"without minTargetFlavor, variant admitted on reservation, deactivate spot and on-demand": {
-			parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq-migration-no-constraint").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -846,7 +851,7 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("reservation").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq-migration-no-constraint", "reservation", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
 					Obj(),
@@ -854,16 +859,16 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 			},
-			wantParentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq-migration-no-constraint").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -894,7 +899,7 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("reservation").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					SimpleReserveQuota("cq-migration-no-constraint", "reservation", metav1.Now().Time).
 					AdmittedAt(true, metav1.Now().Time).
 					Obj(),
@@ -902,20 +907,20 @@ func TestReconcile(t *testing.T) {
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Active(false).
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
 					Queue("lq-migration-no-constraint").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Active(false).
 					Obj(),
 			},
 		},
 		"parent marked finished, mark all variants finished": {
-			parentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -931,16 +936,16 @@ func TestReconcile(t *testing.T) {
 					Queue("lq").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
 					Queue("lq").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Obj(),
 			},
-			wantParentWorkload: utiltestingapi.MakeWorkload("parent", "default").
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq").
 				Request(corev1.ResourceCPU, "1").
 				Label(workload.ParentVariantLabel, "true").
@@ -956,7 +961,7 @@ func TestReconcile(t *testing.T) {
 					Queue("lq").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("on-demand").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Condition(metav1.Condition{
 						Type:    kueue.WorkloadFinished,
 						Status:  metav1.ConditionTrue,
@@ -968,7 +973,7 @@ func TestReconcile(t *testing.T) {
 					Queue("lq").
 					Request(corev1.ResourceCPU, "1").
 					AllowedFlavors("spot").
-					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent", "").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
 					Condition(metav1.Condition{
 						Type:    kueue.WorkloadFinished,
 						Status:  metav1.ConditionTrue,
@@ -981,9 +986,9 @@ func TestReconcile(t *testing.T) {
 	}
 
 	for name, tc := range testCases {
-		if name != "admitted variant syncs admission to parent" {
-			continue
-		}
+		// if name != "admitted variant syncs admission to parent" {
+		// 	continue
+		// }
 		t.Run(name, func(t *testing.T) {
 			var objects []client.Object
 			if tc.parentWorkload != nil {
