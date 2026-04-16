@@ -1006,29 +1006,6 @@ func (r *JobReconciler) ensureOneWorkload(ctx context.Context, job GenericJob, o
 		}
 	}
 
-	if match != nil {
-		if features.Enabled(features.ConcurrentAdmission) && workload.IsParentVariant(match) {
-			// get workloads for which the parents is an owner using owner references
-			list := &kueue.WorkloadList{}
-			if err := r.client.List(context.Background(), list, client.InNamespace(match.Namespace)); err != nil {
-				// TODO: add an index for parent variant to avoid listing all workloads in the namespace
-				return nil, err
-			}
-			variants := make([]kueue.Workload, 0)
-			for i := range list.Items {
-				if workload.GetParentVariant(&list.Items[i]) != match.Name {
-					continue
-				}
-				variants = append(variants, list.Items[i])
-			}
-			admittedVariant := workload.GetAdmittedVariant(variants)
-			if admittedVariant == nil {
-				return match, nil
-			}
-			return admittedVariant, nil
-		}
-	}
-
 	return match, nil
 }
 
