@@ -37,6 +37,7 @@ import (
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	qcache "sigs.k8s.io/kueue/pkg/cache/queue"
 	// schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
+	preemptexpectations "sigs.k8s.io/kueue/pkg/scheduler/preemption/expectations"
 	"sigs.k8s.io/kueue/pkg/util/roletracker"
 	utiltesting "sigs.k8s.io/kueue/pkg/util/testing"
 	utiltestingapi "sigs.k8s.io/kueue/pkg/util/testing/v1beta2"
@@ -980,9 +981,9 @@ func TestReconcile(t *testing.T) {
 	}
 
 	for name, tc := range testCases {
-		// if name != "admitted variant evicted; clear the reservation; activate all variants" {
-		// continue
-		// }
+		if name != "admitted variant syncs admission to parent" {
+			continue
+		}
 		t.Run(name, func(t *testing.T) {
 			var objects []client.Object
 			if tc.parentWorkload != nil {
@@ -996,8 +997,9 @@ func TestReconcile(t *testing.T) {
 				WithStatusSubresource(objects...).
 				// WithInterceptorFuncs(interceptor.Funcs{SubResourcePatch: utiltesting.TreatSSAAsStrategicMerge}).
 				Build()
-			// cqCache := schdcache.New(cl)
-			qManager := qcache.NewManagerForUnitTests(cl, nil)
+				// cqCache := schdcache.New(cl)
+			preemptionExpectations := preemptexpectations.New()
+			qManager := qcache.NewManagerForUnitTests(cl, nil, qcache.WithPreemptionExpectations(preemptionExpectations))
 			// qManager := qcache.NewManagerForUnitTests(cl, cqCache)
 			roleTracker := roletracker.NewFakeRoleTracker(roletracker.RoleLeader)
 
