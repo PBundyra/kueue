@@ -264,7 +264,7 @@ func (c *ClusterQueue) AddFromLocalQueue(q *LocalQueue, roleTracker *roletracker
 	defer c.rwm.Unlock()
 	added := false
 	for _, info := range q.items {
-		if c.ConcurrentAdmission != nil && workload.IsParentVariant(info.Obj) {
+		if workload.IsParentVariant(info.Obj) {
 			// Parent Workload are not pushed onto heap
 			continue
 		}
@@ -289,6 +289,7 @@ func (c *ClusterQueue) ConcurrentAdmissionEnabled() bool {
 // If the workload is already present, updates with the new one.
 func (c *ClusterQueue) PushOrUpdate(wInfo *workload.Info) {
 	if workload.IsParentVariant(wInfo.Obj) {
+		// Parent Workload are not pushed onto heap
 		return
 	}
 	c.rwm.Lock()

@@ -65,7 +65,7 @@ type clusterQueue struct {
 	AdmissionChecks workload.AdmissionChecks
 	Status          metrics.ClusterQueueStatus
 
-	ConcurrentAdmission *kueue.ConcurrentAdmission
+	// ConcurrentAdmission *kueue.ConcurrentAdmission
 
 	// AllocatableResourceGeneration will be increased when some admitted workloads are
 	// deleted, or the resource groups are changed.
@@ -188,7 +188,7 @@ func (c *clusterQueue) updateClusterQueue(
 
 	c.FairWeight = parseFairWeight(in.Spec.FairSharing)
 	c.AdmissionScope = in.Spec.AdmissionScope
-	c.ConcurrentAdmission = in.Spec.ConcurrentAdmission
+	// c.ConcurrentAdmission = in.Spec.ConcurrentAdmission
 	return nil
 }
 
