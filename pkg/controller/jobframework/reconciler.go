@@ -1021,8 +1021,11 @@ func (r *JobReconciler) ensureOneWorkload(ctx context.Context, job GenericJob, o
 				}
 				variants = append(variants, list.Items[i])
 			}
-			
-
+			admittedVariant := workload.GetAdmittedVariant(variants)
+			if admittedVariant == nil {
+				return match, nil
+			}
+			return admittedVariant, nil
 		}
 	}
 

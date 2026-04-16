@@ -46,7 +46,7 @@ import (
 
 	// schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
 	"sigs.k8s.io/kueue/pkg/controller/core"
-	// "sigs.k8s.io/kueue/pkg/controller/jobframework"
+	"sigs.k8s.io/kueue/pkg/controller/jobframework"
 	"sigs.k8s.io/kueue/pkg/util/roletracker"
 	utilslices "sigs.k8s.io/kueue/pkg/util/slices"
 	"sigs.k8s.io/kueue/pkg/workload"
@@ -291,6 +291,8 @@ func (r *variantReconciler) syncFinished(ctx context.Context, parent *kueue.Work
 	}
 	return nil
 }
+
+// TODO: think how AC can evict variant
 
 func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kueue.Workload, variants []kueue.Workload) error {
 	if workload.IsFinished(parent) {
