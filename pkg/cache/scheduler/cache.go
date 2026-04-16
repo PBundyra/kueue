@@ -687,26 +687,12 @@ func (c *Cache) AddOrUpdateWorkload(log logr.Logger, w *kueue.Workload) bool {
 	return updated
 }
 
-const (
-	ParentVariantLabel = "kueue.x-k8s.io/parent-variant"
-)
-
-func IsParentVariant(workload *kueue.Workload) bool {
-	if workload == nil {
-		return false
-	}
-	val, ok := workload.Labels[ParentVariantLabel]
-	return ok && val == "true"
-}
-
-// TODO: fix dependecies
-
 func (c *Cache) addOrUpdateWorkloadWithoutLock(log logr.Logger, wl *kueue.Workload) (bool, error) {
 	wlKey := workload.Key(wl)
 	assignedCqName, assigned := c.workloadAssignedQueues[wlKey]
 
 	// Finished or deactivated workloads should not keep ClusterQueues in-use in the cache.
-	if !workload.HasActiveQuotaReservation(wl) || IsParentVariant(wl) {
+	if !workload.HasActiveQuotaReservation(wl) || workload.IsParentVariant(wl) {
 		if assigned {
 			c.deleteFromQueueIfPresent(log, wlKey, assignedCqName)
 			delete(c.workloadAssignedQueues, wlKey)

@@ -139,7 +139,7 @@ func (r *variantReconciler) getFamilyAndClusterQueue(ctx context.Context, req ct
 		return nil, nil, nil, nil
 	}
 
-	variants, err := r.getVariants(wl)
+	variants, err := r.getVariantsForParent(ctx, wl)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -181,7 +181,7 @@ func (r *variantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	for i, flavor := range cq.Spec.ResourceGroups[0].Flavors {
 		flavorOrder[flavor.Name] = i
 	}
-	variants = sortVariantsByFlavorOrder(variants, cq, flavorOrder)
+	variants = sortVariantsByFlavorOrder(variants, flavorOrder)
 
 	log.V(2).Info("Found Workload family and ClusterQueue", "parent", parent.Name, "clusterQueue", cq.Name, "variants", utilslices.Map(variants, func(v *kueue.Workload) string {
 		return v.Name
@@ -217,14 +217,12 @@ func (r *variantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	// TODO: Handle delayed requeueing e.g. waitForPodsReady, and AdmissionChecks
 	log.V(2).Info("Activating variants if needed")
 	if err := r.activateVariants(ctx, parent, variants, cq, flavorOrder); err != nil {
 		r.logger().V(2).Info("Failed to activate variants", "error", err)
 		return ctrl.Result{}, err
 	}
 
-	// TODO: think if this call should be before or after activating/deactivating variants, or if we need to call it multiple times, e.g. after activating and after deactivating
 	if err := r.syncAdmissionStatus(ctx, parent, variants); err != nil {
 		log.V(2).Info("Failed to sync admission status", "error", err)
 		return ctrl.Result{}, err
@@ -232,22 +230,20 @@ func (r *variantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return ctrl.Result{}, nil
 }
 
-func (r *variantReconciler) getVariants(wl *kueue.Workload) ([]kueue.Workload, error) {
-	if !isParentVariant(wl) {
-		return nil, fmt.Errorf("workload %s/%s is not a parent variant", wl.Namespace, wl.Name)
+func (r *variantReconciler) getVariantsForParent(ctx context.Context, parent *kueue.Workload) ([]kueue.Workload, error) {
+	if !isParentVariant(parent) {
+		return nil, fmt.Errorf("workload %s/%s is not a parent variant", parent.Namespace, parent.Name)
 	}
-	// get workloads for which the parents is an owner using owner references
 	list := &kueue.WorkloadList{}
-	if err := r.client.List(context.Background(), list, client.InNamespace(wl.Namespace)); err != nil {
+	if err := r.client.List(ctx, list, client.InNamespace(parent.Namespace)); err != nil {
 		// TODO: Index variants
 		return nil, err
 	}
 	variants := make([]kueue.Workload, 0)
 	for i := range list.Items {
-		if workload.GetParentVariant(&list.Items[i]) != wl.Name {
-			continue
+		if workload.GetParentVariant(&list.Items[i]) == parent.Name {
+			variants = append(variants, list.Items[i])
 		}
-		variants = append(variants, list.Items[i])
 	}
 	return variants, nil
 }
@@ -284,7 +280,7 @@ func (r *variantReconciler) createVariants(ctx context.Context, parent *kueue.Wo
 			return err
 		}
 		r.logger().V(2).Info("Variant created", "variant", variant.Name, "flavor", flavor)
-		// TODO think if we need any events recording here
+		// TODO: Emit event here
 	}
 	return nil
 }
@@ -324,7 +320,7 @@ func (r *variantReconciler) hasVariantWithFlavor(variants []kueue.Workload, flav
 	return false
 }
 
-func sortVariantsByFlavorOrder(variants []kueue.Workload, cq *kueue.ClusterQueue, flavorOrder map[kueue.ResourceFlavorReference]int) []kueue.Workload {
+func sortVariantsByFlavorOrder(variants []kueue.Workload, flavorOrder map[kueue.ResourceFlavorReference]int) []kueue.Workload {
 	slices.SortFunc(variants, func(a, b kueue.Workload) int {
 		aFlavor := getVariantFlavor(&a) // we only support one flavor per variant for now
 		bFlavor := getVariantFlavor(&b)
@@ -524,8 +520,6 @@ func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kue
 	case admittedVariant == nil && workload.IsAdmitted(parent):
 		// variant got evicted
 		r.logger().V(2).Info("Parent is admitted but no variant is admitted, updating parent to not admitted", "parent", parent.Name)
-		// delete parents admission from status and change its conditions to quotareserved=false and pending with the message that no variant is admitted,
-		// TODO maybe evict instead of unset (?)
 		err := workload.PatchAdmissionStatus(ctx, r.client, parent, r.clock, func(wl *kueue.Workload) (bool, error) {
 			if workload.UnsetQuotaReservationWithCondition(wl, "Pending", "No variant is admitted", r.clock.Now()) {
 				return true, nil
@@ -535,9 +529,8 @@ func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kue
 		if err != nil {
 			return fmt.Errorf("clearing admission: %w", err)
 		}
-		// parent got evicted or parent's admission status has not been synced yet
 	case admittedVariant != nil && !workload.IsAdmitted(parent):
-		// It can either mean that Parent has not been admitted yet and needs admission
+		// Either Parent has not been admitted yet and needs admission;
 		// Or Parent has been preempted, and we need to propagate that to the variant e.g. due to WaitForPodsReady.
 		variantAdmittedCond := apimeta.FindStatusCondition(admittedVariant.Status.Conditions, kueue.WorkloadAdmitted)
 		parentEvictedCond := apimeta.FindStatusCondition(parent.Status.Conditions, kueue.WorkloadEvicted)
@@ -546,7 +539,7 @@ func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kue
 			evictVariant = variantAdmittedCond.LastTransitionTime.Before(&parentEvictedCond.LastTransitionTime) || variantAdmittedCond.LastTransitionTime.Equal(&parentEvictedCond.LastTransitionTime)
 		}
 		if evictVariant {
-			// TODO add requeueAt logic
+			// TODO: Sync Parent's requeueAt status
 			r.logger().V(2).Info("Evicting variant because parent is evicted", "variant", admittedVariant.Name, "parent", parent.Name)
 			return workload.Evict(ctx, r.client, r.recorder, admittedVariant, parentEvictedCond.Reason, parentEvictedCond.Message, "", r.clock, false, nil, nil, nil)
 		}
