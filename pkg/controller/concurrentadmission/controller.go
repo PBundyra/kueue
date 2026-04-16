@@ -316,21 +316,18 @@ func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kue
 		}
 		// parent got evicted or parent's admission status has not been synced yet
 	case admittedVariant != nil && !workload.IsAdmitted(parent):
-		// TODO differentiate what is the case here
-		// Did the parent got evicted and the variant is still admitted with the old variant's admission? e.g. due to waitForPodsReady
-		// variantAdmittedCond := apimeta.FindStatusCondition(admittedVariant.Status.Conditions, kueue.WorkloadAdmitted)
-		// parentEvictedCond := apimeta.FindStatusCondition(parent.Status.Conditions, kueue.WorkloadEvicted)
-
-		// evictVariant := false
-
-		// if apimeta.IsStatusConditionTrue(parent.Status.Conditions, kueue.WorkloadEvicted) {
-		// 	evictVariant = variantAdmittedCond.LastTransitionTime.Before(&parentEvictedCond.LastTransitionTime)
-		// }
-		// if evictVariant {
-		// 	workload.Evict(ctx, r.client, r.recorder, admittedVariant, parentEvictedCond.Reason, parentEvictedCond.Message, "", r.clock, false, nil, nil, nil)
-		// }
-
-		// variant should not be evicted, parent should be admitted
+		// It can either mean that Parent has not been admitted yet and needs admission
+		// Or Parent has been preempted, and we need to propagate that to the variant e.g. due to WaitForPodsReady.		
+		variantAdmittedCond := apimeta.FindStatusCondition(admittedVariant.Status.Conditions, kueue.WorkloadAdmitted)
+		parentEvictedCond := apimeta.FindStatusCondition(parent.Status.Conditions, kueue.WorkloadEvicted)
+		evictVariant := false
+		if apimeta.IsStatusConditionTrue(parent.Status.Conditions, kueue.WorkloadEvicted) {
+			evictVariant = variantAdmittedCond.LastTransitionTime.Before(&parentEvictedCond.LastTransitionTime) || variantAdmittedCond.LastTransitionTime.Equal(&parentEvictedCond.LastTransitionTime)
+		}
+		if evictVariant {
+			r.logger().V(2).Info("Evicting variant because parent is evicted", "variant", admittedVariant.Name, "parent", parent.Name)
+			return workload.Evict(ctx, r.client, r.recorder, admittedVariant, parentEvictedCond.Reason, parentEvictedCond.Message, "", r.clock, false, nil, nil, nil)
+		}
 
 		r.logger().V(2).Info("Parent is not admitted but a variant is admitted, updating parent to admitted", "parent", parent.Name, "admittedVariant", admittedVariant.Name)
 		if err := workload.PatchAdmissionStatus(ctx, r.client, parent, r.clock, func(wl *kueue.Workload) (bool, error) {
