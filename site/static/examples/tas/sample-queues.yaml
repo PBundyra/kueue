@@ -5,7 +5,6 @@ metadata:
 spec:
   levels:
   - nodeLabel: "cloud.provider.com/topology-block"
-  - nodeLabel: "cloud.provider.com/topology-rack"
   - nodeLabel: "kubernetes.io/hostname"
 ---
 kind: ResourceFlavor

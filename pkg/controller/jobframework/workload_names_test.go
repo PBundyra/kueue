@@ -344,7 +344,7 @@ func TestGetWorkloadNameForVariant(t *testing.T) {
 	t.Run("parent name exceeding max length with different flavors have same prefix but different hashes", func(t *testing.T) {
 		parentName := "job-" + strings.Repeat("a", 300) + "-12345"
 		uid := types.UID("uid-123")
-		
+
 		name1 := GetWorkloadNameForVariant(parentName, uid, gvk, "flavor1")
 		name2 := GetWorkloadNameForVariant(parentName, uid, gvk, "flavor2")
 

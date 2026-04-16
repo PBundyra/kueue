@@ -221,6 +221,23 @@ func (c *Cache) WaitForPodsReady(ctx context.Context) {
 	}
 }
 
+// Get workload assigned queues
+func (c *Cache) WorkloadAssignedQueues() map[workload.Reference]kueue.ClusterQueueReference {
+	return c.workloadAssignedQueues
+}
+
+func (c *Cache) GetWorkloadInfo(wlRef workload.Reference) *workload.Info {
+	cqRef, ok := c.workloadAssignedQueues[wlRef]
+	if !ok {
+		return nil
+	}
+	cq := c.hm.ClusterQueue(cqRef)
+	if cq == nil {
+		return nil
+	}
+	return cq.Workloads[wlRef]
+}
+
 func (c *Cache) PodsReadyForAllAdmittedWorkloads(log logr.Logger) bool {
 	if !c.podsReadyTracking {
 		return true

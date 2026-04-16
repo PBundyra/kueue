@@ -99,7 +99,6 @@ type AdmissionConstraints struct {
 	AllowedResourceFlavors []ResourceFlavorReference `json:"allowedResourceFlavors,omitempty"`
 }
 
-
 // PriorityClassGroup indicates the API group of the PriorityClass object.
 //
 // +enum

@@ -44,7 +44,7 @@ import (
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	qcache "sigs.k8s.io/kueue/pkg/cache/queue"
 
-	// schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
+	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
 	"sigs.k8s.io/kueue/pkg/controller/core"
 	"sigs.k8s.io/kueue/pkg/controller/jobframework"
 	"sigs.k8s.io/kueue/pkg/util/roletracker"
@@ -120,8 +120,6 @@ func (r *variantReconciler) getClusterQueue(wl *kueue.Workload) (*kueue.ClusterQ
 	}
 	return cq, nil
 }
-
-
 
 // activateVariants activates variants. It covers the case of preemption, where some variants were previously deactivated, because one of them
 // got admitted. When the admitted variants gets evicted, it activates all variants to allow them to be scheduled.
@@ -292,8 +290,6 @@ func (r *variantReconciler) syncFinished(ctx context.Context, parent *kueue.Work
 	return nil
 }
 
-// TODO: think how AC can evict variant
-
 func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kueue.Workload, variants []kueue.Workload) error {
 	if workload.IsFinished(parent) {
 		return r.syncFinished(ctx, parent, variants)
@@ -317,7 +313,7 @@ func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kue
 		// parent got evicted or parent's admission status has not been synced yet
 	case admittedVariant != nil && !workload.IsAdmitted(parent):
 		// It can either mean that Parent has not been admitted yet and needs admission
-		// Or Parent has been preempted, and we need to propagate that to the variant e.g. due to WaitForPodsReady.		
+		// Or Parent has been preempted, and we need to propagate that to the variant e.g. due to WaitForPodsReady.
 		variantAdmittedCond := apimeta.FindStatusCondition(admittedVariant.Status.Conditions, kueue.WorkloadAdmitted)
 		parentEvictedCond := apimeta.FindStatusCondition(parent.Status.Conditions, kueue.WorkloadEvicted)
 		evictVariant := false
@@ -472,10 +468,21 @@ func (r *variantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 	cq, err := r.getClusterQueue(parent)
-	// TODO: add logic that deletes all Workloads if ConcurrentAdmission is disabled
-	// TODO: add a check if CQ has ConcurrentAdmission set
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+
+	if !r.queues.ConcurrentAdmissionEnabled(kueue.ClusterQueueReference(cq.Name)) {
+		// if ConcurrentAdmission is no longer enabled for this CQ, delete parent and variants
+		if err := r.client.Delete(ctx, parent); err != nil {
+			return ctrl.Result{}, err
+		}
+		for _, v := range variants {
+			if err := r.client.Delete(ctx, &v); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
 	}
 
 	flavorOrder := make(map[kueue.ResourceFlavorReference]int)
@@ -571,9 +578,11 @@ var _ handler.EventHandler = (*clusterQueueHandler)(nil)
 type clusterQueueHandler struct {
 	client client.Client
 	queues *qcache.Manager
+	cache  *schdcache.Cache
 }
 
-func (h *clusterQueueHandler) Create(_ context.Context, e event.CreateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {}
+func (h *clusterQueueHandler) Create(_ context.Context, e event.CreateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+}
 
 func (h *clusterQueueHandler) Update(_ context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	oldCQ, okOld := e.ObjectOld.(*kueue.ClusterQueue)
@@ -586,7 +595,9 @@ func (h *clusterQueueHandler) Update(_ context.Context, e event.UpdateEvent, q w
 	}
 }
 
-func (h *clusterQueueHandler) Delete(_ context.Context, e event.DeleteEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {}
+func (h *clusterQueueHandler) Delete(_ context.Context, e event.DeleteEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+}
+
 func (h *clusterQueueHandler) Generic(_ context.Context, _ event.GenericEvent, _ workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 }
 
@@ -595,15 +606,27 @@ func (h *clusterQueueHandler) queueReconcileForCQ(object client.Object, q workqu
 	if !ok {
 		return
 	}
-
+	// Reconcile all parent variants that are in this cluster queue
 	workloadsInfo := h.queues.PendingWorkloadsInfo(kueue.ClusterQueueReference(cq.Name))
 	for _, info := range workloadsInfo {
 		wl := info.Obj
-		if !isVariant(wl) {
+		parentName := workload.GetParentVariant(wl)
+		q.Add(reconcile.Request{
+			NamespacedName: client.ObjectKey{
+				Namespace: wl.Namespace,
+				Name:      parentName,
+			},
+		})
+	}
+	for wlName, cqRef := range h.cache.WorkloadAssignedQueues() {
+		if cqRef == kueue.ClusterQueueReference(cq.Name) {
+			wl := h.cache.GetWorkloadInfo(wlName)
+			parentName := workload.GetParentVariant(wl.Obj)
+			// requeue parent of running variant
 			q.Add(reconcile.Request{
 				NamespacedName: client.ObjectKey{
-					Namespace: wl.Namespace,
-					Name:      wl.Name,
+					Namespace: wl.Obj.Namespace,
+					Name:      parentName,
 				},
 			})
 		}

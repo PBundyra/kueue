@@ -243,7 +243,7 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if found {
 		enabled := r.queues.ConcurrentAdmissionEnabled(cqName)
 		if enabled && !workload.IsVariant(&wl) && !workload.IsParentVariant(&wl) {
-			// Workload is missing Parent annotation, set it
+			// Workload is a Parent without set Parent annotation yet
 			workload.SetParentVariantLabel(&wl)
 			err := r.client.Update(ctx, &wl)
 			return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -989,6 +989,11 @@ func syncAdmissionCheckConditions(conds []kueue.AdmissionCheckState, admissionCh
 }
 
 func (r *WorkloadReconciler) reconcileNotReadyTimeout(ctx context.Context, req ctrl.Request, wl *kueue.Workload) (time.Duration, error) {
+	if features.Enabled(features.ConcurrentAdmission) && workload.IsVariant(wl) {
+		// Variant Workloads are not supposed to have PodsReady condition, it's Parent Workload responsibility.
+		return 0, nil
+	}
+
 	log := ctrl.LoggerFrom(ctx)
 
 	if !workload.IsActive(wl) || workload.IsEvicted(wl) {
@@ -1072,12 +1077,8 @@ func (r *WorkloadReconciler) Create(e event.TypedCreateEvent[*kueue.Workload]) b
 	}
 
 	if workload.IsAdmissible(e.Object) {
-		concurrentAdmissionEnabled := false
-		cqName, found := r.queues.ClusterQueueForWorkload(e.Object)
-		if found {
-			concurrentAdmissionEnabled = r.queues.ConcurrentAdmissionEnabled(cqName)
-		}
-		if concurrentAdmissionEnabled && !workload.IsVariant(wlCopy) {
+		cqName, _ := r.queues.ClusterQueueForWorkload(e.Object)
+		if r.queues.ConcurrentAdmissionEnabled(cqName) && !workload.IsVariant(wlCopy) {
 			log.V(2).Info("Workload Parent detected, not pushing to the heap")
 			return true
 		}
@@ -1150,6 +1151,8 @@ func (r *WorkloadReconciler) Update(e event.TypedUpdateEvent[*kueue.Workload]) b
 	wlKey := workload.Key(e.ObjectNew)
 	// We do not handle old workload here as it will be deleted or replaced by new one anyway.
 	workload.AdjustResources(ctrl.LoggerInto(ctx, log), r.client, wlCopy)
+	cqName, _ := r.queues.ClusterQueueForWorkload(wlCopy)
+	concurrentAdmissionEnabled := r.queues.ConcurrentAdmissionEnabled(cqName)
 
 	switch {
 	case status == workload.StatusFinished || !active:
@@ -1163,7 +1166,11 @@ func (r *WorkloadReconciler) Update(e event.TypedUpdateEvent[*kueue.Workload]) b
 
 		// The workload could have been in the queues if we missed an event.
 		r.queues.DeleteWorkload(log, wlKey)
-		r.queues.AddFinishedWorkload(wlCopy)
+
+		// Do not add Variants to finished Workloads to not pollute metrics
+		if concurrentAdmissionEnabled && !workload.IsVariant(wlCopy) {
+			r.queues.AddFinishedWorkload(wlCopy)
+		}
 
 		// trigger the move of associated inadmissibleWorkloads, if there are any.
 		r.queues.QueueAssociatedInadmissibleWorkloadsAfter(ctx, wlKey, func() {
@@ -1178,15 +1185,11 @@ func (r *WorkloadReconciler) Update(e event.TypedUpdateEvent[*kueue.Workload]) b
 		if dra.NeedsDRAReconcile(e.ObjectNew) {
 			log.V(2).Info("Skipping queue update for DRA workload - handled in Reconcile")
 		} else {
-			// if err := r.queues.UpdateWorkload(log, wlCopy); err != nil {
-			concurrentAdmissionEnabled := false
-			cqName, found := r.queues.ClusterQueueForWorkload(wlCopy)
-			if found {
-				concurrentAdmissionEnabled = r.queues.ConcurrentAdmissionEnabled(cqName)
-			}
-			if concurrentAdmissionEnabled && !workload.IsVariant(wlCopy) {
-				log.V(2).Info("Workload Parent detected, not pushing to the heap")
-				return true
+			if concurrentAdmissionEnabled {
+				if !workload.IsVariant(wlCopy) {
+					log.V(2).Info("Workload Parent detected, not pushing to the heap")
+					return true
+				}
 			}
 			err := r.queues.UpdateWorkload(log, wlCopy)
 			if err != nil {

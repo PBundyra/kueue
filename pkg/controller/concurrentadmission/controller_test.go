@@ -85,7 +85,6 @@ func TestReconcile(t *testing.T) {
 	migrationCQNoConstraint.Spec.ConcurrentAdmission = &kueue.ConcurrentAdmission{}
 	migrationLQNoConstraint := utiltestingapi.MakeLocalQueue("lq-migration-no-constraint", "default").ClusterQueue("cq-migration-no-constraint").Obj()
 
-
 	testCases := map[string]struct {
 		parentWorkload       *kueue.Workload
 		variantWorkloads     []kueue.Workload
@@ -140,7 +139,7 @@ func TestReconcile(t *testing.T) {
 				Queue("lq").
 				Label(workload.ParentVariantLabel, "true").
 				Obj(),
-			variantWorkloads:  []kueue.Workload{
+			variantWorkloads: []kueue.Workload{
 				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
 					Queue("lq").
 					AllowedFlavors("spot").
@@ -982,7 +981,7 @@ func TestReconcile(t *testing.T) {
 
 	for name, tc := range testCases {
 		// if name != "admitted variant evicted; clear the reservation; activate all variants" {
-			// continue
+		// continue
 		// }
 		t.Run(name, func(t *testing.T) {
 			var objects []client.Object
