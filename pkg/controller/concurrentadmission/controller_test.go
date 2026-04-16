@@ -19,7 +19,7 @@ package concurrentadmission
 import (
 	"context"
 	"testing"
-	// "time"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -27,16 +27,15 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	testingclock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	// "sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	qcache "sigs.k8s.io/kueue/pkg/cache/queue"
-	// schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
 	preemptexpectations "sigs.k8s.io/kueue/pkg/scheduler/preemption/expectations"
 	"sigs.k8s.io/kueue/pkg/util/roletracker"
 	utiltesting "sigs.k8s.io/kueue/pkg/util/testing"
@@ -48,7 +47,7 @@ var (
 	workloadCmpOpts = cmp.Options{
 		cmpopts.EquateEmpty(),
 		cmpopts.IgnoreFields(
-			kueue.Workload{}, "TypeMeta", "ObjectMeta.ResourceVersion", "ObjectMeta.UID", "Status.AccumulatedPastExecutionTimeSeconds",
+			kueue.Workload{}, "TypeMeta", "ObjectMeta.ResourceVersion", "ObjectMeta.UID", "Status.AccumulatedPastExecutionTimeSeconds", "Status.SchedulingStats",
 		),
 		cmpopts.IgnoreFields(metav1.Condition{}, "LastTransitionTime"),
 		cmpopts.SortSlices(func(a, b kueue.Workload) bool { return a.Name < b.Name }),
@@ -302,60 +301,6 @@ func TestReconcile(t *testing.T) {
 					Obj(),
 			},
 		},
-		// "evicted variant clears admission on parent": {
-		// 	parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
-		// 		Queue("lq").
-		// 		Label(workload.ParentVariantLabel, "true").
-		// 		SimpleReserveQuota("cq", "spot", metav1.Now().Time).
-		// 		AdmittedAt(true, metav1.Now().Time).
-		// 		Obj(),
-		// 	variantWorkloads: []kueue.Workload{
-		// 		*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
-		// 			Queue("lq").
-		// 			AllowedFlavors("spot").
-		// 			Request(corev1.ResourceCPU, "1").
-		// 			ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
-		// 			Obj(),
-		// 		*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
-		// 			Queue("lq").
-		// 			AllowedFlavors("on-demand").
-		// 			ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
-		// 			Obj(),
-		// 	},
-		// 	wantParentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
-		// 		Queue("lq").
-		// 		Label(workload.ParentVariantLabel, "true").
-		// 		// We expect Admission to NOT be cleared due to fake client SSA limitations
-		// 		SimpleReserveQuota("cq", "spot", metav1.Now().Time).
-		// 		Condition(metav1.Condition{
-		// 			Type:    kueue.WorkloadQuotaReserved,
-		// 			Status:  metav1.ConditionFalse,
-		// 			Reason:  "Pending",
-		// 			Message: "No variant is admitted",
-		// 		}).
-		// 		Condition(metav1.Condition{
-		// 			Type:    kueue.WorkloadAdmitted,
-		// 			Status:  metav1.ConditionFalse,
-		// 			Reason:  "NoReservation",
-		// 			Message: "The workload has no reservation",
-		// 		}).
-		// 		Obj(),
-		// 	wantVariantWorkloads: []kueue.Workload{
-		// 		*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
-		// 			Queue("lq").
-		// 			AllowedFlavors("spot").
-		// 			Request(corev1.ResourceCPU, "1").
-		// 			ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
-		// 			Obj(),
-		// 		*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
-		// 			Queue("lq").
-		// 			AllowedFlavors("on-demand").
-		// 			ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
-		// 			Obj(),
-		// 	},
-		// 	wantResult: reconcile.Result{},
-		// 	wantErr:    false,
-		// },
 		"admitted variant evicted; clear its reservation; activate all variants": {
 			parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
 				Queue("lq").
@@ -983,12 +928,133 @@ func TestReconcile(t *testing.T) {
 					Obj(),
 			},
 		},
+		"admitted variant is evicted when parent is evicted (simulate WaitForPodsReady)": {
+			parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
+				Queue("lq").
+				Label(workload.ParentVariantLabel, "true").
+				Request(corev1.ResourceCPU, "1").
+				Condition(metav1.Condition{
+					Type:    kueue.WorkloadAdmitted,
+					Status:  metav1.ConditionFalse,
+					Reason:  "NoReservation",
+					Message: "The workload has no reservation",
+				}).
+				Condition(metav1.Condition{
+					Type:    kueue.WorkloadEvicted,
+					Status:             metav1.ConditionTrue,
+					Reason:             kueue.WorkloadEvictedByPodsReadyTimeout,
+					Message:            "Evicted due to pods ready timeout",
+					LastTransitionTime: metav1.Now(),
+				}).
+				Obj(),
+			variantWorkloads: []kueue.Workload{
+				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
+					Queue("lq").
+					AllowedFlavors("spot").
+					Request(corev1.ResourceCPU, "1").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
+					SimpleReserveQuota("cq", "spot", metav1.Now().Time.Add(-time.Hour)).
+					AdmittedAt(true, metav1.Now().Time.Add(-time.Hour)).
+					Obj(),
+				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
+					Queue("lq").
+					AllowedFlavors("on-demand").
+					Request(corev1.ResourceCPU, "1").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
+					Obj(),
+			},
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
+				Queue("lq").
+				Label(workload.ParentVariantLabel, "true").
+				Request(corev1.ResourceCPU, "1").
+				Condition(metav1.Condition{
+					Type:    kueue.WorkloadAdmitted,
+					Status:  metav1.ConditionFalse,
+					Reason:  "NoReservation",
+					Message: "The workload has no reservation",
+				}).
+				Condition(metav1.Condition{
+					Type:    kueue.WorkloadEvicted,
+					Status:             metav1.ConditionTrue,
+					Reason:             kueue.WorkloadEvictedByPodsReadyTimeout,
+					Message:            "Evicted due to pods ready timeout",
+					LastTransitionTime: metav1.Now(),
+				}).
+				Obj(),
+			wantVariantWorkloads: []kueue.Workload{
+				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
+					Queue("lq").
+					AllowedFlavors("spot").
+					Request(corev1.ResourceCPU, "1").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
+					SimpleReserveQuota("cq", "spot", metav1.Now().Time.Add(-time.Hour)).
+					AdmittedAt(true, metav1.Now().Time.Add(-time.Hour)).
+					Condition(metav1.Condition{
+						Type:    kueue.WorkloadEvicted,
+						Status:  metav1.ConditionTrue,
+						Reason:  kueue.WorkloadEvictedByPodsReadyTimeout,
+						Message: "Evicted due to pods ready timeout",
+					}).
+					Obj(),
+				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
+					Queue("lq").
+					AllowedFlavors("on-demand").
+					Request(corev1.ResourceCPU, "1").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
+					Obj(),
+			},
+			wantResult: reconcile.Result{},
+			wantErr:    false,
+		},
+		"parent is not active, propagating deactivation to all variants": {
+			parentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
+				Queue("lq").
+				Label(workload.ParentVariantLabel, "true").
+				Request(corev1.ResourceCPU, "1").
+				Active(false).
+				Obj(),
+			variantWorkloads: []kueue.Workload{
+				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
+					Queue("lq").
+					AllowedFlavors("spot").
+					Request(corev1.ResourceCPU, "1").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
+					Obj(),
+				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
+					Queue("lq").
+					AllowedFlavors("on-demand").
+					Request(corev1.ResourceCPU, "1").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
+					Obj(),
+			},
+			wantParentWorkload: utiltestingapi.MakeWorkload("parent-12345", "default").
+				Queue("lq").
+				Label(workload.ParentVariantLabel, "true").
+				Request(corev1.ResourceCPU, "1").
+				Active(false).
+				Obj(),
+			wantVariantWorkloads: []kueue.Workload{
+				*utiltestingapi.MakeWorkload("parent-variant-spot", "default").
+					Queue("lq").
+					AllowedFlavors("spot").
+					Request(corev1.ResourceCPU, "1").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
+					Active(false).
+					Obj(),
+				*utiltestingapi.MakeWorkload("parent-variant-on-demand", "default").
+					Queue("lq").
+					AllowedFlavors("on-demand").
+					Request(corev1.ResourceCPU, "1").
+					ControllerReference(kueue.GroupVersion.WithKind("Workload"), "parent-12345", "").
+					Active(false).
+					Obj(),
+			},
+			wantResult: reconcile.Result{},
+			wantErr:    false,
+		},
 	}
 
 	for name, tc := range testCases {
-		// if name != "admitted variant syncs admission to parent" {
-		// 	continue
-		// }
 		t.Run(name, func(t *testing.T) {
 			var objects []client.Object
 			if tc.parentWorkload != nil {
@@ -1000,15 +1066,11 @@ func TestReconcile(t *testing.T) {
 			cl := utiltesting.NewClientBuilder().
 				WithObjects(objects...).
 				WithStatusSubresource(objects...).
-				// WithInterceptorFuncs(interceptor.Funcs{SubResourcePatch: utiltesting.TreatSSAAsStrategicMerge}).
 				Build()
-				// cqCache := schdcache.New(cl)
 			preemptionExpectations := preemptexpectations.New()
 			qManager := qcache.NewManagerForUnitTests(cl, nil, qcache.WithPreemptionExpectations(preemptionExpectations))
-			// qManager := qcache.NewManagerForUnitTests(cl, cqCache)
 			roleTracker := roletracker.NewFakeRoleTracker(roletracker.RoleLeader)
 
-			// Always create all CQs and LQs
 			cqs := []*kueue.ClusterQueue{defaultCQ.DeepCopy(), migrationCQ.DeepCopy(), migrationCQNoConstraint.DeepCopy()}
 			lqs := []*kueue.LocalQueue{defaultLQ.DeepCopy(), migrationLQ.DeepCopy(), migrationLQNoConstraint.DeepCopy()}
 
@@ -1016,9 +1078,6 @@ func TestReconcile(t *testing.T) {
 				if err := cl.Create(context.Background(), cq); err != nil {
 					t.Fatal(err)
 				}
-				// if err := cqCache.AddClusterQueue(context.Background(), cq); err != nil {
-				// t.Fatal(err)
-				// }
 				if err := qManager.AddClusterQueue(context.Background(), cq); err != nil {
 					t.Fatal(err)
 				}
@@ -1028,20 +1087,15 @@ func TestReconcile(t *testing.T) {
 				if err := cl.Create(context.Background(), lq); err != nil {
 					t.Fatal(err)
 				}
-				// if err := cqCache.AddLocalQueue(lq); err != nil {
-				// t.Fatal(err)
-				// }
 				if err := qManager.AddLocalQueue(context.Background(), lq); err != nil {
 					t.Fatal(err)
 				}
 			}
 
 			if tc.parentWorkload != nil {
-				// cqCache.AddOrUpdateWorkload(ctrl.Log, tc.parentWorkload.DeepCopy())
 				qManager.AddOrUpdateWorkload(ctrl.Log, tc.parentWorkload.DeepCopy())
 			}
 			for i := range tc.variantWorkloads {
-				// cqCache.AddOrUpdateWorkload(ctrl.Log, tc.variantWorkloads[i].DeepCopy())
 				qManager.AddOrUpdateWorkload(ctrl.Log, tc.variantWorkloads[i].DeepCopy())
 			}
 
@@ -1049,9 +1103,9 @@ func TestReconcile(t *testing.T) {
 				logName: ConcurrentAdmissionController,
 				client:  cl,
 				queues:  qManager,
-				// cache:       cqCache,
 				roleTracker: roleTracker,
 				clock:       testingclock.NewFakeClock(metav1.Now().Time),
+				recorder:    record.NewFakeRecorder(10),
 			}
 
 			req := tc.req
@@ -1073,7 +1127,6 @@ func TestReconcile(t *testing.T) {
 				t.Errorf("Reconcile() got = %v, want %v", got, tc.wantResult)
 			}
 
-			// Verify Parent Workload
 			if tc.wantParentWorkload != nil {
 				var gotParent kueue.Workload
 				err := cl.Get(context.Background(), types.NamespacedName{Namespace: tc.wantParentWorkload.Namespace, Name: tc.wantParentWorkload.Name}, &gotParent)
@@ -1085,13 +1138,11 @@ func TestReconcile(t *testing.T) {
 				}
 			}
 
-			// Verify Variant Workloads
 			var gotVariants kueue.WorkloadList
 			if err := cl.List(context.Background(), &gotVariants, client.InNamespace(tc.req.Namespace)); err != nil {
 				t.Fatal(err)
 			}
 
-			// Filter out parent from gotVariants
 			var variants []kueue.Workload
 			for _, wl := range gotVariants.Items {
 				if wl.Name != tc.wantParentWorkload.Name {
