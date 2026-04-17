@@ -514,6 +514,14 @@ func (r *variantReconciler) syncFinished(ctx context.Context, parent *kueue.Work
 	return nil
 }
 
+func (r *variantReconciler) syncPodsReadyCond(parent, variant *kueue.Workload) bool {
+	parentCond := apimeta.FindStatusCondition(parent.Status.Conditions, kueue.WorkloadPodsReady)
+	if parentCond == nil {
+		return false
+	}
+	return apimeta.SetStatusCondition(&variant.Status.Conditions, *parentCond)
+}
+
 func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kueue.Workload, variants []kueue.Workload) error {
 	log := ctrl.LoggerFrom(ctx)
 	if workload.IsFinished(parent) {
@@ -537,16 +545,22 @@ func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kue
 	case admittedVariant != nil && !workload.IsAdmitted(parent):
 		// Either Parent has not been admitted yet and needs admission;
 		// Or Parent has been preempted, and we need to propagate that to the variant e.g. due to WaitForPodsReady.
-		variantAdmittedCond := apimeta.FindStatusCondition(admittedVariant.Status.Conditions, kueue.WorkloadAdmitted)
-		parentEvictedCond := apimeta.FindStatusCondition(parent.Status.Conditions, kueue.WorkloadEvicted)
-		evictVariant := false
-		if apimeta.IsStatusConditionTrue(parent.Status.Conditions, kueue.WorkloadEvicted) {
-			evictVariant = variantAdmittedCond.LastTransitionTime.Before(&parentEvictedCond.LastTransitionTime) || variantAdmittedCond.LastTransitionTime.Equal(&parentEvictedCond.LastTransitionTime)
-		}
-		if evictVariant {
-			// TODO: Sync Parent's requeueAt status
-			log.V(2).Info("Evicting variant because parent is evicted", "variant", admittedVariant.Name, "parent", parent.Name)
-			return workload.Evict(ctx, r.client, r.recorder, admittedVariant, parentEvictedCond.Reason, parentEvictedCond.Message, "", r.clock, false, nil, nil)
+		// variantAdmittedCond := apimeta.FindStatusCondition(admittedVariant.Status.Conditions, kueue.WorkloadAdmitted)
+		// parentEvictedCond := apimeta.FindStatusCondition(parent.Status.Conditions, kueue.WorkloadEvicted)
+		// evictVariant := false
+		// if apimeta.IsStatusConditionTrue(parent.Status.Conditions, kueue.WorkloadEvicted) {
+		// 	evictVariant = variantAdmittedCond.LastTransitionTime.Before(&parentEvictedCond.LastTransitionTime) || variantAdmittedCond.LastTransitionTime.Equal(&parentEvictedCond.LastTransitionTime)
+		// }
+		// if evictVariant {
+		// 	// TODO: Sync Parent's requeueAt status
+		// 	log.V(2).Info("Evicting variant because parent is evicted", "variant", admittedVariant.Name, "parent", parent.Name)
+		// 	return workload.Evict(ctx, r.client, r.recorder, admittedVariant, parentEvictedCond.Reason, parentEvictedCond.Message, "", r.clock, false, nil, nil)
+		// }
+		log.V(2).Info("Syncing WaitForPodsReady condition")
+		if err := workload.PatchAdmissionStatus(ctx, r.client, parent, r.clock, func(wl *kueue.Workload) (bool, error) {
+			return r.syncPodsReadyCond(wl, admittedVariant), nil
+		}); err != nil {
+			return client.IgnoreNotFound(err)
 		}
 
 		log.V(2).Info("Parent is not admitted but a variant is admitted, updating parent to admitted", "parent", parent.Name, "admittedVariant", admittedVariant.Name)
@@ -559,6 +573,13 @@ func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kue
 			return client.IgnoreNotFound(err)
 		}
 	case admittedVariant != nil && workload.IsAdmitted(parent):
+		log.V(2).Info("Syncing WaitForPodsReady condition")
+		if err := workload.PatchAdmissionStatus(ctx, r.client, parent, r.clock, func(wl *kueue.Workload) (bool, error) {
+			return r.syncPodsReadyCond(wl, admittedVariant), nil
+		}); err != nil {
+			return client.IgnoreNotFound(err)
+		}
+
 		log.V(2).Info("Parent and admitted variant are both admitted, checking if the parent's admission status is the same as the admitted variant", "parent", parent.Name, "admittedVariant", admittedVariant.Name)
 		if err := workload.PatchAdmissionStatus(ctx, r.client, parent, r.clock, func(wl *kueue.Workload) (bool, error) {
 			// check if the admission of the parent is the same a variant's
