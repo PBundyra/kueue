@@ -940,7 +940,7 @@ func TestReconcile(t *testing.T) {
 					Message: "The workload has no reservation",
 				}).
 				Condition(metav1.Condition{
-					Type:    kueue.WorkloadEvicted,
+					Type:               kueue.WorkloadEvicted,
 					Status:             metav1.ConditionTrue,
 					Reason:             kueue.WorkloadEvictedByPodsReadyTimeout,
 					Message:            "Evicted due to pods ready timeout",
@@ -974,7 +974,7 @@ func TestReconcile(t *testing.T) {
 					Message: "The workload has no reservation",
 				}).
 				Condition(metav1.Condition{
-					Type:    kueue.WorkloadEvicted,
+					Type:               kueue.WorkloadEvicted,
 					Status:             metav1.ConditionTrue,
 					Reason:             kueue.WorkloadEvictedByPodsReadyTimeout,
 					Message:            "Evicted due to pods ready timeout",
@@ -1100,9 +1100,9 @@ func TestReconcile(t *testing.T) {
 			}
 
 			r := &variantReconciler{
-				logName: ConcurrentAdmissionController,
-				client:  cl,
-				queues:  qManager,
+				logName:     ConcurrentAdmissionController,
+				client:      cl,
+				queues:      qManager,
 				roleTracker: roleTracker,
 				clock:       testingclock.NewFakeClock(metav1.Now().Time),
 				recorder:    record.NewFakeRecorder(10),

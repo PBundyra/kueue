@@ -678,6 +678,9 @@ func (c *Cache) updateLqMetricLabels(newLq *kueue.LocalQueue) {
 }
 
 func (c *Cache) AddOrUpdateWorkload(log logr.Logger, w *kueue.Workload) bool {
+	if workload.IsParentVariant(w) {
+		return false
+	}
 	c.Lock()
 	defer c.Unlock()
 	updated, err := c.addOrUpdateWorkloadWithoutLock(log, w)
