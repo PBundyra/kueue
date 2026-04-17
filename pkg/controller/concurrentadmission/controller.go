@@ -82,12 +82,9 @@ func newVariantReconciler(c client.Client, queues *qcache.Manager, recorder reco
 	}
 }
 
-// func SetupControllers(mgr ctrl.Manager, queues *qcache.Manager, cfg *configapi.Configuration, roleTracker *roletracker.RoleTracker) (string, error) {
 func SetupControllers(mgr ctrl.Manager, queues *qcache.Manager, cache *schdcache.Cache, cfg *configapi.Configuration, roleTracker *roletracker.RoleTracker) (string, error) {
 	recorder := mgr.GetEventRecorderFor(ConcurrentAdmissionController)
 	variantRec := newVariantReconciler(mgr.GetClient(), queues, recorder, roleTracker)
-	// variantRec := newVariantReconciler(mgr.GetClient(), queues, cache, recorder, roleTracker)
-	// if ctrlName, err := variantRec.setupWithManager(mgr, cfg); err != nil {
 	if ctrlName, err := variantRec.setupWithManager(mgr, cache, cfg); err != nil {
 		return ctrlName, err
 	}
@@ -103,10 +100,10 @@ func (r *variantReconciler) setupWithManager(mgr ctrl.Manager, cache *schdcache.
 			mgr.GetCache(),
 			&kueue.Workload{},
 			handler.TypedEnqueueRequestsFromMapFunc(func(_ context.Context, obj *kueue.Workload) []reconcile.Request {
-				if isParentVariant(obj) {
+				if workload.IsParentVariant(obj) {
 					return []reconcile.Request{{NamespacedName: client.ObjectKeyFromObject(obj)}}
 				}
-				if isVariant(obj) {
+				if workload.IsVariant(obj) {
 					return []reconcile.Request{{NamespacedName: client.ObjectKey{Namespace: obj.Namespace, Name: workload.GetParentVariant(obj)}}}
 				}
 				return nil
@@ -135,7 +132,7 @@ func (r *variantReconciler) getFamilyAndClusterQueue(ctx context.Context, req ct
 		return nil, nil, nil, client.IgnoreNotFound(err)
 	}
 
-	if !isParentVariant(wl) {
+	if !workload.IsParentVariant(wl) {
 		return nil, nil, nil, nil
 	}
 
@@ -231,7 +228,7 @@ func (r *variantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 func (r *variantReconciler) getVariantsForParent(ctx context.Context, parent *kueue.Workload) ([]kueue.Workload, error) {
-	if !isParentVariant(parent) {
+	if !workload.IsParentVariant(parent) {
 		return nil, fmt.Errorf("workload %s/%s is not a parent variant", parent.Namespace, parent.Name)
 	}
 	list := &kueue.WorkloadList{}
@@ -630,17 +627,17 @@ func (r *variantReconciler) Delete(e event.TypedDeleteEvent[*kueue.Workload]) bo
 	return r.shouldReconcile(e.Object)
 }
 
-func (r *variantReconciler) shouldReconcile(workload *kueue.Workload) bool {
+func (r *variantReconciler) shouldReconcile(wl *kueue.Workload) bool {
 	log := r.logger()
-	if isParentVariant(workload) {
-		log.V(2).Info("Workload is a parent variant, reconciling", "name", workload.Name, "namespace", workload.Namespace)
+	if workload.IsParentVariant(wl) {
+		log.V(2).Info("Workload is a parent variant, reconciling", "name", wl.Name, "namespace", wl.Namespace)
 		return true
 	}
-	if isVariant(workload) {
-		log.V(2).Info("Workload is a variant, reconciling", "name", workload.Name, "namespace", workload.Namespace)
+	if workload.IsVariant(wl) {
+		log.V(2).Info("Workload is a variant, reconciling", "name", wl.Name, "namespace", wl.Namespace)
 		return true
 	}
-	log.V(2).Info("Workload is neither a parent variant nor a variant, ignoring", "name", workload.Name, "namespace", workload.Namespace)
+	log.V(2).Info("Workload is neither a parent variant nor a variant, ignoring", "name", wl.Name, "namespace", wl.Namespace)
 	return false
 }
 
