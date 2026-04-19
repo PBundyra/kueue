@@ -87,7 +87,7 @@ type ClusterQueueSpecApplyConfiguration struct {
 	// admissionScope indicates whether ClusterQueue uses the Admission Fair Sharing
 	AdmissionScope *AdmissionScopeApplyConfiguration `json:"admissionScope,omitempty"`
 	// concurrentAdmission defines the policy for concurrent attempts.
-	ConcurrentAdmission *ConcurrentAdmissionApplyConfiguration `json:"concurrentAdmission,omitempty"`
+	ConcurrentAdmissionPolicy *ConcurrentAdmissionPolicyApplyConfiguration `json:"concurrentAdmissionPolicy,omitempty"`
 }
 
 // ClusterQueueSpecApplyConfiguration constructs a declarative configuration of the ClusterQueueSpec type for use with
@@ -181,10 +181,10 @@ func (b *ClusterQueueSpecApplyConfiguration) WithAdmissionScope(value *Admission
 	return b
 }
 
-// WithConcurrentAdmission sets the ConcurrentAdmission field in the declarative configuration to the given value
+// WithConcurrentAdmissionPolicy sets the ConcurrentAdmissionPolicy field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the ConcurrentAdmission field is set to the value of the last call.
-func (b *ClusterQueueSpecApplyConfiguration) WithConcurrentAdmission(value *ConcurrentAdmissionApplyConfiguration) *ClusterQueueSpecApplyConfiguration {
-	b.ConcurrentAdmission = value
+// If called multiple times, the ConcurrentAdmissionPolicy field is set to the value of the last call.
+func (b *ClusterQueueSpecApplyConfiguration) WithConcurrentAdmissionPolicy(value *ConcurrentAdmissionPolicyApplyConfiguration) *ClusterQueueSpecApplyConfiguration {
+	b.ConcurrentAdmissionPolicy = value
 	return b
 }

@@ -778,11 +778,16 @@ func (a *Assignment) findOldPodSetRequest(psName kueue.PodSetReference, resource
 }
 
 func (a *FlavorAssigner) isFlavorAllowed(fName kueue.ResourceFlavorReference) bool {
-	if a.wl.Obj.Spec.AdmissionConstraints == nil || len(a.wl.Obj.Spec.AdmissionConstraints.AllowedResourceFlavors) == 0 {
+	annotations := a.wl.Obj.GetAnnotations()
+	if annotations == nil {
 		return true
 	}
-	for _, af := range a.wl.Obj.Spec.AdmissionConstraints.AllowedResourceFlavors {
-		if af == fName {
+	allowedFlavors, ok := annotations["kueue.x-k8s.io/workload-allowed-resource-flavors"]
+	if !ok {
+		return true
+	}
+	for _, af := range strings.Split(allowedFlavors, ",") {
+		if af == string(fName) {
 			return true
 		}
 	}
@@ -831,7 +836,7 @@ func (a *FlavorAssigner) findFlavorForPodSets(
 		attemptedFlavorIdx = idx
 		fName := resourceGroup.Flavors[idx]
 		if !a.isFlavorAllowed(fName) {
-			status.appendf("flavor %s is not in the allowed list: %v", fName, a.wl.Obj.Spec.AdmissionConstraints.AllowedResourceFlavors)
+			status.appendf("flavor %s is not in the allowed this workload due to concurrent admission constraints", fName)
 			continue
 		}
 

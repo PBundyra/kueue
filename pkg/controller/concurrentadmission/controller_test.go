@@ -19,6 +19,7 @@ package concurrentadmission
 import (
 	"context"
 	"testing"
+
 	// "time"
 
 	"github.com/google/go-cmp/cmp"
@@ -60,12 +61,9 @@ func TestReconcile(t *testing.T) {
 		ResourceGroup(
 			*utiltestingapi.MakeFlavorQuotas("on-demand").Obj(),
 			*utiltestingapi.MakeFlavorQuotas("spot").Obj(),
-		).Obj()
-	defaultCQ.Spec.ConcurrentAdmission = &kueue.ConcurrentAdmission{
-		MigrationConstraints: kueue.ConcurrentAdmissionMigrationConstraints{
-			MinTargetFlavor: ptr.To(kueue.ResourceFlavorReference("reservation")),
-		},
-	}
+		).
+		ConcurrentAdmissionPolicy(kueue.ConcurrentAdmissionTryPreferredFlavors).
+		Obj()
 	defaultLQ := utiltestingapi.MakeLocalQueue("lq", "default").ClusterQueue("cq").Obj()
 
 	migrationCQ := utiltestingapi.MakeClusterQueue("cq-migration").
@@ -73,12 +71,9 @@ func TestReconcile(t *testing.T) {
 			*utiltestingapi.MakeFlavorQuotas("reservation").Obj(),
 			*utiltestingapi.MakeFlavorQuotas("on-demand").Obj(),
 			*utiltestingapi.MakeFlavorQuotas("spot").Obj(),
-		).Obj()
-	migrationCQ.Spec.ConcurrentAdmission = &kueue.ConcurrentAdmission{
-		MigrationConstraints: kueue.ConcurrentAdmissionMigrationConstraints{
-			MinTargetFlavor: ptr.To(kueue.ResourceFlavorReference("reservation")),
-		},
-	}
+		).
+		MinPreferredFlavorName("reservation").
+		Obj()
 	migrationLQ := utiltestingapi.MakeLocalQueue("lq-migration", "default").ClusterQueue("cq-migration").Obj()
 
 	migrationCQNoConstraint := utiltestingapi.MakeClusterQueue("cq-migration-no-constraint").
@@ -86,8 +81,9 @@ func TestReconcile(t *testing.T) {
 			*utiltestingapi.MakeFlavorQuotas("reservation").Obj(),
 			*utiltestingapi.MakeFlavorQuotas("on-demand").Obj(),
 			*utiltestingapi.MakeFlavorQuotas("spot").Obj(),
-		).Obj()
-	migrationCQNoConstraint.Spec.ConcurrentAdmission = &kueue.ConcurrentAdmission{}
+		).
+		ConcurrentAdmissionPolicy(kueue.ConcurrentAdmissionTryPreferredFlavors).
+		Obj()
 	migrationLQNoConstraint := utiltestingapi.MakeLocalQueue("lq-migration-no-constraint", "default").ClusterQueue("cq-migration-no-constraint").Obj()
 
 	testCases := map[string]struct {

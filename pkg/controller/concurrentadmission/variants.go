@@ -16,6 +16,16 @@
 
 package concurrentadmission
 
+const (
+	// WorkloadAllowedResourceFlavorAnnotation is an annotation set on a Workload level that defines
+	// which ResourceFlavors can be assigned to this Workload by Kueue scheduler
+	WorkloadAllowedResourceFlavorAnnotation = "kueue.x-k8s.io/workload-allowed-resource-flavors"
+
+	// ParentVariantLabel is the label key in the Workload that is a parent of Variants
+	// The value of this label is boolean, and it is set to "true" if the Workload is a parent of Variants.
+	ParentVariantLabel = "kueue.x-k8s.io/parent-variant"
+)
+
 // import (
 // 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 // )

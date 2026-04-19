@@ -101,7 +101,7 @@ func ValidateClusterQueue(cq *kueue.ClusterQueue) field.ErrorList {
 func ValidateClusterQueueUpdate(oldCQ, newCQ *kueue.ClusterQueue) field.ErrorList {
 	allErrs := validateClusterQueueSpec(newCQ)
 	allErrs = append(allErrs, validateAdmissionCheckOnFlavorsUpdate(oldCQ, newCQ)...)
-	allErrs = append(allErrs, apimachineryvalidation.ValidateImmutableField(newCQ.Spec.ConcurrentAdmission, oldCQ.Spec.ConcurrentAdmission, field.NewPath("spec", "concurrentAdmission"))...)
+	allErrs = append(allErrs, apimachineryvalidation.ValidateImmutableField(newCQ.Spec.ConcurrentAdmissionPolicy, oldCQ.Spec.ConcurrentAdmissionPolicy, field.NewPath("spec", "concurrentAdmissionPolicy"))...)
 	return allErrs
 }
 

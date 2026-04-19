@@ -137,7 +137,7 @@ type ClusterQueue struct {
 
 	sw *stickyWorkload
 
-	ConcurrentAdmission *kueue.ConcurrentAdmission
+	ConcurrentAdmissionPolicy *kueue.ConcurrentAdmissionPolicy
 }
 
 func (c *ClusterQueue) GetName() kueue.ClusterQueueReference {
@@ -252,7 +252,7 @@ func (c *ClusterQueue) Update(apiCQ *kueue.ClusterQueue) error {
 	}
 	c.namespaceSelector = nsSelector
 	c.active = apimeta.IsStatusConditionTrue(apiCQ.Status.Conditions, kueue.ClusterQueueActive)
-	c.ConcurrentAdmission = apiCQ.Spec.ConcurrentAdmission
+	c.ConcurrentAdmissionPolicy = apiCQ.Spec.ConcurrentAdmissionPolicy
 	return nil
 }
 
@@ -282,7 +282,7 @@ func (c *ClusterQueue) AddFromLocalQueue(q *LocalQueue, roleTracker *roletracker
 func (c *ClusterQueue) ConcurrentAdmissionEnabled() bool {
 	c.rwm.RLock()
 	defer c.rwm.RUnlock()
-	return c.ConcurrentAdmission != nil
+	return c.ConcurrentAdmissionPolicy != nil
 }
 
 // PushOrUpdate pushes the workload to ClusterQueue.

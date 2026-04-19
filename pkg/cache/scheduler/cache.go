@@ -194,8 +194,6 @@ func (c *Cache) newClusterQueue(log logr.Logger, cq *kueue.ClusterQueue) (*clust
 	return cqImpl, nil
 }
 
-
-
 // WaitForPodsReady waits for all admitted workloads to be in the PodsReady condition
 // if podsReadyTracking is enabled, otherwise returns immediately.
 func (c *Cache) WaitForPodsReady(ctx context.Context) {

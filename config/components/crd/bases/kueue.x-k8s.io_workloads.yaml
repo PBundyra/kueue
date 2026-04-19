@@ -9512,22 +9512,6 @@ spec:
 
                   Defaults to true
                 type: boolean
-              admissionConstraints:
-                description: AdmissionConstraints defines the constraints of Workload's
-                  admission
-                properties:
-                  allowedResourceFlavors:
-                    description: |-
-                      allowedResourceFlavors defines the list of ResourceFlavors a Workload can admit to.
-                      If not specified, a Workload can admit to any ResourceFlavor.
-                    items:
-                      description: ResourceFlavorReference is the name of the ResourceFlavor.
-                      maxLength: 253
-                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                      type: string
-                    type: array
-                    x-kubernetes-list-type: set
-                type: object
               maximumExecutionTimeSeconds:
                 description: |-
                   maximumExecutionTimeSeconds if provided, determines the maximum time, in seconds,

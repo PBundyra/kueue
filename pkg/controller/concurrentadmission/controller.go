@@ -295,15 +295,16 @@ func generateVariant(parent *kueue.Workload, flavor kueue.ResourceFlavorReferenc
 		Status: parent.Status,
 	}
 	delete(variant.Labels, workload.ParentVariantLabel)
-	variant.Spec.AdmissionConstraints = &kueue.AdmissionConstraints{
-		// we only support one flavor per variant for Alpha
-		AllowedResourceFlavors: []kueue.ResourceFlavorReference{flavor},
-	}
+	metav1.SetMetaDataAnnotation(&variant.ObjectMeta, WorkloadAllowedResourceFlavorAnnotation, string(flavor))
 	return variant
 }
 
 func getVariantFlavor(wl *kueue.Workload) kueue.ResourceFlavorReference {
-	return wl.Spec.AdmissionConstraints.AllowedResourceFlavors[0]
+	annotations := wl.GetAnnotations()
+	if annotations == nil {
+		return ""
+	}
+	return kueue.ResourceFlavorReference(annotations[WorkloadAllowedResourceFlavorAnnotation])
 }
 
 func (r *variantReconciler) hasVariantWithFlavor(variants []kueue.Workload, flavor kueue.ResourceFlavorReference) bool {
@@ -407,8 +408,8 @@ func (r *variantReconciler) deactivateVariants(ctx context.Context, parent *kueu
 	}
 	// deactivate Variants below minTargetFlavor if specified
 	var minTargetFlavor *kueue.ResourceFlavorReference
-	if cq.Spec.ConcurrentAdmission != nil {
-		minTargetFlavor = cq.Spec.ConcurrentAdmission.MigrationConstraints.MinTargetFlavor
+	if cq.Spec.ConcurrentAdmissionPolicy != nil && cq.Spec.ConcurrentAdmissionPolicy.Migration.Constraints != nil {
+		minTargetFlavor = cq.Spec.ConcurrentAdmissionPolicy.Migration.Constraints.MinPreferredFlavorName
 	}
 	if minTargetFlavor != nil {
 		log.V(2).Info("Deactivating variants below minTargetFlavor", "minTargetFlavor", *minTargetFlavor)
@@ -463,8 +464,8 @@ func (r *variantReconciler) activateVariants(ctx context.Context, parent *kueue.
 	}
 	// activate all variants that are at least at the minTargetFlavor if specificed
 	var minTargetFlavor *kueue.ResourceFlavorReference
-	if cq.Spec.ConcurrentAdmission != nil {
-		minTargetFlavor = cq.Spec.ConcurrentAdmission.MigrationConstraints.MinTargetFlavor
+	if cq.Spec.ConcurrentAdmissionPolicy != nil && cq.Spec.ConcurrentAdmissionPolicy.Migration.Constraints != nil {
+		minTargetFlavor = cq.Spec.ConcurrentAdmissionPolicy.Migration.Constraints.MinPreferredFlavorName
 	}
 	if minTargetFlavor != nil {
 		for i := range variants {
@@ -658,7 +659,7 @@ func (h *clusterQueueHandler) Update(_ context.Context, e event.UpdateEvent, q w
 	if !okOld || !okNew {
 		return
 	}
-	if !equality.Semantic.DeepEqual(oldCQ.Spec.ConcurrentAdmission, newCQ.Spec.ConcurrentAdmission) {
+	if !equality.Semantic.DeepEqual(oldCQ.Spec.ConcurrentAdmissionPolicy, newCQ.Spec.ConcurrentAdmissionPolicy) {
 		h.queueReconcileForCQ(newCQ, q)
 	}
 }

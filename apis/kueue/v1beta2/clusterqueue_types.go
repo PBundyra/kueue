@@ -145,7 +145,7 @@ type ClusterQueueSpec struct {
 
 	// concurrentAdmission defines the policy for concurrent attempts.
 	// +optional
-	ConcurrentAdmission *ConcurrentAdmission `json:"concurrentAdmission,omitempty"`
+	ConcurrentAdmissionPolicy *ConcurrentAdmissionPolicy `json:"concurrentAdmissionPolicy,omitempty"`
 }
 
 // AdmissionChecksStrategy defines a strategy for a AdmissionCheck.
@@ -187,34 +187,40 @@ const (
 	BestEffortFIFO QueueingStrategy = "BestEffortFIFO"
 )
 
-type ConcurrentAdmission struct {
+type ConcurrentAdmissionPolicy struct {
 	// migrationConstraints defines the constraints of Variants migration
 	//
 	// +required
-	MigrationConstraints ConcurrentAdmissionMigrationConstraints `json:"migrationConstraints"`
+	Migration ConcurrentAdmissionMigration `json:"migration"`
 }
 
-type ConcurrentAdmissionMigrationConstraints struct {
+type ConcurrentAdmissionMigration struct {
 	// mode defines the mode of Workload's migration.
 	//
 	// +required
 	Mode ConcurrentAdmissionMigrationMode `json:"mode"`
 
-	// minTargetFlavor defines the minimal flavor a Workload can migrate to.
+	// constraints defines the constraints of Workload's migration.
+	//
+	// +optional
+	Constraints *ConcurrentAdmissionConstraints `json:"constraints,omitempty"`
+}
+
+type ConcurrentAdmissionConstraints struct {
+	// minPreferredFlavorName defines the minimal flavor a Workload can migrate to.
 	// The order is based on the order of flavors in ClusterQueue.
 	// It can only be used if the Mode is `UpgradeOnly` and `ExplicitVariants` is not specified.
-	// If the Mode is `UpgradeOnly` and MinTargetFlavor is not specified, then there's
+	// If the Mode is `UpgradeOnly` and MinPreferredFlavorName is not specified, then there's
 	// no constraints on what flavors a Workload can migrate to.
 	//
 	// +optional
-	MinTargetFlavor *ResourceFlavorReference `json:"minTargetFlavor,omitempty"`
+	MinPreferredFlavorName *ResourceFlavorReference `json:"minPreferredFlavorName,omitempty"`
 }
 
 type ConcurrentAdmissionMigrationMode string
 
 const (
-	// Allow upgrades
-	ConcurrentAdmissionUpgradeOnly ConcurrentAdmissionMigrationMode = "UpgradeOnly"
+	ConcurrentAdmissionTryPreferredFlavors ConcurrentAdmissionMigrationMode = "TryPreferredFlavors"
 )
 
 // +kubebuilder:validation:XValidation:rule="self.flavors.all(x, size(x.resources) == size(self.coveredResources))", message="flavors must have the same number of resources as the coveredResources"
