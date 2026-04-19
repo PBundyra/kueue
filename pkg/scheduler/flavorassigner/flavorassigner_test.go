@@ -4591,10 +4591,12 @@ func TestAssignFlavorsWithAllowedFlavors(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			wl := utiltestingapi.MakeWorkload("wl", "ns").
-				PodSets(*utiltestingapi.MakePodSet("main", 1).Request(corev1.ResourceCPU, "2").Obj()).
-				AllowedFlavors(tc.allowedFlavors...).
-				Obj()
+			wlBuilder := utiltestingapi.MakeWorkload("wl", "ns").
+				PodSets(*utiltestingapi.MakePodSet("main", 1).Request(corev1.ResourceCPU, "2").Obj())
+			if tc.allowedFlavors != nil {
+				wlBuilder = wlBuilder.AllowedFlavors(tc.allowedFlavors...)
+			}
+			wl := wlBuilder.Obj()
 
 			wlInfo := workload.NewInfo(wl)
 
