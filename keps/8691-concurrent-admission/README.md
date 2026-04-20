@@ -305,22 +305,22 @@ spec:
             createDelaySeconds: 7200
 ```
 
-```
-apiVersion: kueue.x-k8s.io/v1beta2
+```yaml
 kind: ClusterQueue
 metadata:
   name: "cluster-queue"
 spec:
   ...
-  concurrentAdmission:
-    migrationConstraints:
-      mode: UpgradeOnly
-    explicitVariants:
-      - name: "reservation"
-        allowedResourceFlavors: ["reservation"]
-      - name: "on-demand"
-        allowedResourceFlavors: ["on-demand"]
-        createDelaySeconds: 7200
+  concurrentAdmissionPolicy:
+    migration:
+      mode: TryPreferredFlavors
+      constraints:
+        explicitVariants:
+          - name: "reservation"
+            allowedResourceFlavors: ["reservation"]
+          - name: "on-demand"
+            allowedResourceFlavors: ["on-demand"]
+            createDelaySeconds: 7200
 ```
 
 #### Story 6: Limit when migration can happen
@@ -357,15 +357,16 @@ metadata:
   name: "cluster-queue"
 spec:
   ...
-  concurrentAdmission:
-    migrationConstraints:
-      mode: UpgradeOnly
-    explicitVariants:
-      - name: "reservation"
-        allowedResourceFlavors: ["reservation"]
-        maxDeleteDelaySeconds: 86400
-      - name: "on-demand"
-        allowedResourceFlavors: ["on-demand"]
+  concurrentAdmissionPolicy:
+    migration:
+      mode: TryPreferredFlavors
+      constraints:
+        explicitVariants:
+          - name: "reservation"
+            allowedResourceFlavors: ["reservation"]
+            maxDeleteDelaySeconds: 86400
+          - name: "on-demand"
+            allowedResourceFlavors: ["on-demand"]
 ```
 
 #### Story 7: Workload with multiple PodSets
@@ -403,14 +404,15 @@ metadata:
   name: "cluster-queue"
 spec:
   ...
-  concurrentAdmission:
-    migrationConstraints:
-      mode: UpgradeOnly
-    explicitVariants:
-      - name: "reservation-flavor"
-        allowedResourceFlavors: ["reservation", "default-cpu"]
-      - name: "on-demand-flavor"
-        allowedResourceFlavors: ["on-demand", "default-cpu"]
+  concurrentAdmissionPolicy:
+    migration:
+      mode: TryPreferredFlavors
+      constraints:
+        explicitVariants:
+          - name: "reservation-flavor"
+            allowedResourceFlavors: ["reservation", "default-cpu"]
+          - name: "on-demand-flavor"
+            allowedResourceFlavors: ["on-demand", "default-cpu"]
 ```
 
 <!--
@@ -647,6 +649,7 @@ The other one is to not block Variants siblings if the first one cannot be sched
 For Alpha and Beta version of this feature we don't plan to support `StrictFIFO` queueing strategy. Based on users' feedback we will reconsider it for GA.
 
 ### Risks and Mitigations
+
 ### FlavorFungibility Misinterpretation
 
 In the first iteration of the feature we don't plan to integrate with the `FlavorFungibility` on the
@@ -787,7 +790,8 @@ Revisit support for ClusterQueues with more than 1 `ResourceGroup`.
 
 #### GA
 
-Reconsider support for `StrictFIFO` queueing strategy.
+- Reconsider support for `StrictFIFO` queueing strategy.
+- Support `WorkloadSlice`
 
 <!--
 
