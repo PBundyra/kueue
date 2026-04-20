@@ -179,6 +179,7 @@ A parent Workload is excluded from the scheduling logic in Kueue. It acts as an 
 
 A Variant Workload is a cloned view of its Parent with some additional scheduling constraints,
 in particular it can be scheduled on a limited number of ResourceFlavors.
+
 Apart from that a Variant Workload acts almost identically as a "regular" Workload regarding scheduling, quota accounting and other core features.
 
 <!--
@@ -305,24 +306,6 @@ spec:
             createDelaySeconds: 7200
 ```
 
-```yaml
-kind: ClusterQueue
-metadata:
-  name: "cluster-queue"
-spec:
-  ...
-  concurrentAdmissionPolicy:
-    migration:
-      mode: TryPreferredFlavors
-      constraints:
-        explicitVariants:
-          - name: "reservation"
-            allowedResourceFlavors: ["reservation"]
-          - name: "on-demand"
-            allowedResourceFlavors: ["on-demand"]
-            createDelaySeconds: 7200
-```
-
 #### Story 6: Limit when migration can happen
 As an admin I have two resource flavors in my CQ:
 1) Most preferable: reservation
@@ -333,25 +316,6 @@ I want to avoid migrating a long-running workload if it is nearing completion. I
 To achieve this, I set maxDeleteDelaySeconds on the more preferred variant. After this time passes, the "reservation" variant is deactivated, preventing any further upgrades.
 
 ```yaml
-kind: ClusterQueue
-metadata:
-  name: "cluster-queue"
-spec:
-  ...
-  concurrentAdmissionPolicy:
-    migration:
-      mode: TryPreferredFlavors
-      constraints:
-        explicitVariants:
-          - name: "reservation"
-            allowedResourceFlavors: ["reservation"]
-            maxDeleteDelaySeconds: 86400
-          - name: "on-demand"
-            allowedResourceFlavors: ["on-demand"]
-```
-
-```
-apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
   name: "cluster-queue"
@@ -381,24 +345,6 @@ CPU:
 I want to allow upgrades for the GPU portion while keeping the CPU flavor constant across variants.
 
 ```yaml
-kind: ClusterQueue
-metadata:
-  name: "cluster-queue"
-spec:
-  ...
-  concurrentAdmissionPolicy:
-    migration:
-      mode: TryPreferredFlavors
-      constraints:
-        explicitVariants:
-          - name: "reservation-flavor"
-            allowedResourceFlavors: ["reservation", "default-cpu"]
-          - name: "on-demand-flavor"
-            allowedResourceFlavors: ["on-demand", "default-cpu"]
-```
-
-```
-apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
   name: "cluster-queue"
@@ -663,19 +609,6 @@ the `FlavorFungibility` config.
 
 This may lead to confusion, so we need to address this use-case directly in the documentation.
 
-### FlavorFungibility Misinterpretation
-
-In the first iteration of the feature we don't plan to integrate with the `FlavorFungibility` on the
-inter-Variants level. It means that the decision about migrating to a different flavor is binary - if a Variant has been admitted or not.
-It doesn't take into account if preemption or borrowing was necessary to admit a Variant. The preference order of Variants
-is purely based on ResourceFlavors used, and user doesn't have capabilities to express what to do if e.g. two Variants can be
-admitted, but the more preferable one requires preemption. The more preferable one will always be chosen.
-
-At the same time if a single Variant can be scheduled onto multiple flavors due to `ExplicitVariants`, it follows
-the `FlavorFungibility` config.
-
-This may lead to confusion, so we need to address this use-case directly in the documentation.
-
 ### Misconfiguration
 
 The overall complexity of this feature may lead to misconfigurations. To mitigate this risk
@@ -784,15 +717,6 @@ After the implementation PR is merged, add the names of the tests here.
 - Reconsider support for `StrictFIFO` queueing strategy.
 - Support `WorkloadSlice`
 
-Revisit the [`WorkloadStatus`](#workload-status) changes.
-
-Revisit support for ClusterQueues with more than 1 `ResourceGroup`.
-
-#### GA
-
-- Reconsider support for `StrictFIFO` queueing strategy.
-- Support `WorkloadSlice`
-
 <!--
 
 Clearly define what it means for the feature to be implemented and
@@ -827,14 +751,6 @@ Major milestones might include:
 
 ### Increased API Object Count
 With this feature Kueue creates more API Objects that put pressure on core k8s components such as e.g. API Server or etcd.
-
-Additionally, since one Job corresponds to potentially multiple Workloads it increases the cost of scheduling a Job by Kueue.
-In worst case scenario Kueue scheduler needs to do **V** (number of Variants per Job) number of scheduling cycles before it admits the last one.
-However those loops are lighter than for a regular Workload, since because of the scheduling constraints they only consider a subset of ResourceFlavors.
-
-This is a drawback only for environments with thousands of Jobs incoming, where the accuracy of scheduling is amortized by the inflow
-on incoming Jobs, and hence throughput is more important. In environments with fewer and bigger Jobs, the gain from scheduling decisions and
-upgrades outweighs the performance penalty.
 
 Additionally, since one Job corresponds to potentially multiple Workloads it increases the cost of scheduling a Job by Kueue.
 In worst case scenario Kueue scheduler needs to do **V** (number of Variants per Job) number of scheduling cycles before it admits the last one.
