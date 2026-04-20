@@ -64,9 +64,6 @@ type clusterQueue struct {
 	// Sets hold ResourceFlavors to which an AdmissionCheck should apply.
 	AdmissionChecks workload.AdmissionChecks
 	Status          metrics.ClusterQueueStatus
-
-	// ConcurrentAdmission *kueue.ConcurrentAdmission
-
 	// AllocatableResourceGeneration will be increased when some admitted workloads are
 	// deleted, or the resource groups are changed.
 	AllocatableResourceGeneration int64
@@ -477,7 +474,6 @@ func (c *clusterQueue) addOrUpdateWorkload(log logr.Logger, w *kueue.Workload) {
 	c.Workloads[k] = wi
 	c.updateWorkloadUsage(log, wi, add)
 	if c.podsReadyTracking && !apimeta.IsStatusConditionTrue(w.Status.Conditions, kueue.WorkloadPodsReady) {
-		// TODO: Check if we can add PodsReady condition to Variant and sync it with the parent
 		c.WorkloadsNotReady.Insert(k)
 	}
 	c.reportActiveWorkloads()
