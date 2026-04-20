@@ -54,6 +54,7 @@ import (
 	qcache "sigs.k8s.io/kueue/pkg/cache/queue"
 	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
 	"sigs.k8s.io/kueue/pkg/constants"
+	"sigs.k8s.io/kueue/pkg/controller/concurrentadmission"
 	"sigs.k8s.io/kueue/pkg/controller/core/indexer"
 	"sigs.k8s.io/kueue/pkg/dra"
 	"sigs.k8s.io/kueue/pkg/features"
@@ -241,9 +242,9 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	cqName, found := r.queues.ClusterQueueForWorkload(&wl)
 	if found {
 		enabled := r.queues.ConcurrentAdmissionEnabled(cqName)
-		if enabled && !workload.IsVariant(&wl) && !workload.IsParentVariant(&wl) {
+		if enabled && !concurrentadmission.IsVariant(&wl) && !workload.IsParentVariant(&wl) {
 			// Workload is a Parent without set Parent annotation yet
-			workload.SetParentVariantLabel(&wl)
+			concurrentadmission.SetParentVariantLabel(&wl)
 			err := r.client.Update(ctx, &wl)
 			return ctrl.Result{}, client.IgnoreNotFound(err)
 		}
@@ -993,7 +994,7 @@ func syncAdmissionCheckConditions(conds []kueue.AdmissionCheckState, admissionCh
 }
 
 func (r *WorkloadReconciler) reconcileNotReadyTimeout(ctx context.Context, req ctrl.Request, wl *kueue.Workload) (time.Duration, error) {
-	if features.Enabled(features.ConcurrentAdmission) && workload.IsVariant(wl) {
+	if features.Enabled(features.ConcurrentAdmission) && concurrentadmission.IsVariant(wl) {
 		// Variant Workloads are not supposed to have PodsReady condition, it's Parent Workload responsibility.
 		return 0, nil
 	}
@@ -1067,7 +1068,7 @@ func (r *WorkloadReconciler) Create(e event.TypedCreateEvent[*kueue.Workload]) b
 	log.V(2).Info("Workload create event")
 
 	if status == workload.StatusFinished {
-		if !workload.IsVariant(e.Object) {
+		if !concurrentadmission.IsVariant(e.Object) {
 			// Finished metric should account for Variants
 			r.queues.AddFinishedWorkload(e.Object)
 		}
@@ -1086,7 +1087,7 @@ func (r *WorkloadReconciler) Create(e event.TypedCreateEvent[*kueue.Workload]) b
 	if workload.IsAdmissible(e.Object) {
 		cqName, _ := r.queues.ClusterQueueForWorkload(e.Object)
 		concurrentAdmissionEnabled := r.queues.ConcurrentAdmissionEnabled(cqName)
-		if !concurrentAdmissionEnabled || (concurrentAdmissionEnabled && workload.IsVariant(wlCopy)) {
+		if !concurrentAdmissionEnabled || (concurrentAdmissionEnabled && concurrentadmission.IsVariant(wlCopy)) {
 			if err := r.queues.AddOrUpdateWorkload(log, wlCopy); err != nil {
 				log.V(2).Info("ignored an error for now", "error", err)
 			}
@@ -1174,7 +1175,7 @@ func (r *WorkloadReconciler) Update(e event.TypedUpdateEvent[*kueue.Workload]) b
 		// The workload could have been in the queues if we missed an event.
 		r.queues.DeleteWorkload(log, wlKey)
 
-		if !workload.IsVariant(wlCopy) {
+		if !concurrentadmission.IsVariant(wlCopy) {
 			// Finished metric should account for Variants
 			r.queues.AddFinishedWorkload(wlCopy)
 		}
@@ -1192,7 +1193,7 @@ func (r *WorkloadReconciler) Update(e event.TypedUpdateEvent[*kueue.Workload]) b
 		if dra.NeedsDRAReconcile(e.ObjectNew) {
 			log.V(2).Info("Skipping queue update for DRA workload - handled in Reconcile")
 		} else {
-			if !concurrentAdmissionEnabled || (concurrentAdmissionEnabled && workload.IsVariant(wlCopy)) {
+			if !concurrentAdmissionEnabled || (concurrentAdmissionEnabled && concurrentadmission.IsVariant(wlCopy)) {
 				err := r.queues.UpdateWorkload(log, wlCopy)
 				if err != nil {
 					log.V(2).Info("ignored an error for now", "error", err)
@@ -1201,7 +1202,7 @@ func (r *WorkloadReconciler) Update(e event.TypedUpdateEvent[*kueue.Workload]) b
 		}
 	case prevStatus == workload.StatusPending && (status == workload.StatusQuotaReserved || status == workload.StatusAdmitted):
 		r.queues.DeleteWorkload(log, wlKey)
-		if !concurrentAdmissionEnabled || (concurrentAdmissionEnabled && workload.IsVariant(wlCopy)) {
+		if !concurrentAdmissionEnabled || (concurrentAdmissionEnabled && concurrentadmission.IsVariant(wlCopy)) {
 			if !r.cache.AddOrUpdateWorkload(log, wlCopy) {
 				log.V(2).Info("ClusterQueue for workload didn't exist; ignored for now")
 			}
@@ -1233,7 +1234,7 @@ func (r *WorkloadReconciler) Update(e event.TypedUpdateEvent[*kueue.Workload]) b
 				if dra.NeedsDRAReconcile(e.ObjectNew) {
 					log.V(2).Info("Skipping immediate requeue for DRA workload - handled in Reconcile")
 				} else {
-					if !concurrentAdmissionEnabled || (concurrentAdmissionEnabled && workload.IsVariant(wlCopy)) {
+					if !concurrentAdmissionEnabled || (concurrentAdmissionEnabled && concurrentadmission.IsVariant(wlCopy)) {
 						if err := r.queues.AddOrUpdateWorkloadWithoutLock(log, wlCopy); err != nil {
 							log.V(2).Info("ignored an error for now", "error", err)
 						}
@@ -1250,7 +1251,7 @@ func (r *WorkloadReconciler) Update(e event.TypedUpdateEvent[*kueue.Workload]) b
 			// Update the workload from cache while holding the queues lock
 			// to guarantee that requeued workloads are taken into account before
 			// the next scheduling cycle.
-			if !concurrentAdmissionEnabled || (concurrentAdmissionEnabled && workload.IsVariant(wlCopy)) {
+			if !concurrentAdmissionEnabled || (concurrentAdmissionEnabled && concurrentadmission.IsVariant(wlCopy)) {
 				r.cache.AddOrUpdateWorkload(log, wlCopy)
 			}
 		})
@@ -1258,7 +1259,7 @@ func (r *WorkloadReconciler) Update(e event.TypedUpdateEvent[*kueue.Workload]) b
 	default:
 		// Workload update in the cache is handled here; however, some fields are immutable
 		// and are not supposed to actually change anything.
-		if !concurrentAdmissionEnabled || (concurrentAdmissionEnabled && workload.IsVariant(wlCopy)) {
+		if !concurrentAdmissionEnabled || (concurrentAdmissionEnabled && concurrentadmission.IsVariant(wlCopy)) {
 			r.cache.AddOrUpdateWorkload(log, wlCopy)
 		}
 	}
@@ -1475,7 +1476,7 @@ func (h *resourceUpdatesHandler) queueReconcileForPending(ctx context.Context, q
 		concurrentAdmissionEnabled := h.r.queues.ConcurrentAdmissionEnabled(cqName)
 
 		if workload.IsAdmissible(wlCopy) {
-			if !concurrentAdmissionEnabled || (concurrentAdmissionEnabled && workload.IsVariant(wlCopy)) {
+			if !concurrentAdmissionEnabled || (concurrentAdmissionEnabled && concurrentadmission.IsVariant(wlCopy)) {
 				if err = h.r.queues.AddOrUpdateWorkload(log, wlCopy); err != nil {
 					log.V(2).Info("ignored an error for now", "error", err)
 				}

@@ -476,7 +476,7 @@ func (c *clusterQueue) addOrUpdateWorkload(log logr.Logger, w *kueue.Workload) {
 	wi.UpdateSchedulingHash(log)
 	c.Workloads[k] = wi
 	c.updateWorkloadUsage(log, wi, add)
-	if c.podsReadyTracking && !apimeta.IsStatusConditionTrue(w.Status.Conditions, kueue.WorkloadPodsReady) && !workload.IsVariant(w) {
+	if c.podsReadyTracking && !apimeta.IsStatusConditionTrue(w.Status.Conditions, kueue.WorkloadPodsReady) {
 		// TODO: Check if we can add PodsReady condition to Variant and sync it with the parent
 		c.WorkloadsNotReady.Insert(k)
 	}

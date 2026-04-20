@@ -16,49 +16,56 @@
 
 package concurrentadmission
 
-const (
-	// WorkloadAllowedResourceFlavorAnnotation is an annotation set on a Workload level that defines
-	// which ResourceFlavors can be assigned to this Workload by Kueue scheduler
-	WorkloadAllowedResourceFlavorAnnotation = "kueue.x-k8s.io/workload-allowed-resource-flavors"
-
-	// ParentVariantLabel is the label key in the Workload that is a parent of Variants
-	// The value of this label is boolean, and it is set to "true" if the Workload is a parent of Variants.
-	ParentVariantLabel = "kueue.x-k8s.io/parent-variant"
+import (
+	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
+	"sigs.k8s.io/kueue/pkg/controller/constants"
+	"sigs.k8s.io/kueue/pkg/workload"
 )
 
-// import (
-// 	kueue "sigs.k8s.io/kueue/apis/kueue/v1beta2"
-// )
+func IsVariant(workload *kueue.Workload) bool {
+	if workload == nil {
+		return false
+	}
+	return isOwnedByAWorkload(workload)
+}
 
-// const (
-// 	// ParentVariantLabel is the label key in the Workload that is a parent of Variants
-// 	// The value of this label is boolean, and it is set to "true" if the Workload is a parent of Variants.
-// 	ParentVariantLabel = "kueue.x-k8s.io/parent-variant"
-// )
+func isOwnedByAWorkload(workload *kueue.Workload) bool {
+	if workload == nil {
+		return false
+	}
+	for _, owner := range workload.OwnerReferences {
+		if owner.Kind == "Workload" && owner.APIVersion == "kueue.x-k8s.io/v1beta2" {
+			return true
+		}
+	}
+	return false
+}
 
-// func isParentVariant(workload *kueue.Workload) bool {
-// 	if workload == nil {
-// 		return false
-// 	}
-// 	val, ok := workload.Labels[ParentVariantLabel]
-// 	return ok && val == "true"
-// }
+func getParentVariant(workload *kueue.Workload) string {
+	if workload == nil {
+		return ""
+	}
+	for _, owner := range workload.OwnerReferences {
+		if owner.Kind == "Workload" && owner.APIVersion == "kueue.x-k8s.io/v1beta2" {
+			return owner.Name
+		}
+	}
+	return ""
+}
 
-// func isVariant(workload *kueue.Workload) bool {
-// 	if workload == nil {
-// 		return false
-// 	}
-// 	return isOwnedByAWorkload(workload)
-// }
+func getAdmittedVariant(variants []kueue.Workload) *kueue.Workload {
+	for i := range variants {
+		v := &variants[i]
+		if workload.IsAdmitted(v) {
+			return v
+		}
+	}
+	return nil
+}
 
-// func isOwnedByAWorkload(workload *kueue.Workload) bool {
-// 	if workload == nil {
-// 		return false
-// 	}
-// 	for _, owner := range workload.OwnerReferences {
-// 		if owner.Kind == "Workload" && owner.APIVersion == "kueue.x-k8s.io/v1beta2" {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
+func SetParentVariantLabel(workload *kueue.Workload) {
+	if workload.Labels == nil {
+		workload.Labels = make(map[string]string)
+	}
+	workload.Labels[constants.ParentVariantLabel] = "true"
+}

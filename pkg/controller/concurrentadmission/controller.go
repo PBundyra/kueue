@@ -45,7 +45,7 @@ import (
 	qcache "sigs.k8s.io/kueue/pkg/cache/queue"
 
 	schdcache "sigs.k8s.io/kueue/pkg/cache/scheduler"
-	"sigs.k8s.io/kueue/pkg/controller/core"
+	"sigs.k8s.io/kueue/pkg/controller/constants"
 	"sigs.k8s.io/kueue/pkg/controller/jobframework"
 	"sigs.k8s.io/kueue/pkg/util/roletracker"
 	utilslices "sigs.k8s.io/kueue/pkg/util/slices"
@@ -103,8 +103,8 @@ func (r *variantReconciler) setupWithManager(mgr ctrl.Manager, cache *schdcache.
 				if workload.IsParentVariant(obj) {
 					return []reconcile.Request{{NamespacedName: client.ObjectKeyFromObject(obj)}}
 				}
-				if workload.IsVariant(obj) {
-					return []reconcile.Request{{NamespacedName: client.ObjectKey{Namespace: obj.Namespace, Name: workload.GetParentVariant(obj)}}}
+				if IsVariant(obj) {
+					return []reconcile.Request{{NamespacedName: client.ObjectKey{Namespace: obj.Namespace, Name: getParentVariant(obj)}}}
 				}
 				return nil
 			}),
@@ -116,7 +116,7 @@ func (r *variantReconciler) setupWithManager(mgr ctrl.Manager, cache *schdcache.
 			MaxConcurrentReconciles: mgr.GetControllerOptions().GroupKindConcurrency[kueue.GroupVersion.WithKind("Workload").GroupKind().String()],
 		}).
 		WithLogConstructor(roletracker.NewLogConstructor(r.roleTracker, ConcurrentAdmissionController)).
-		Complete(core.WithLeadingManager(mgr, r, &kueue.Workload{}, cfg))
+		Complete(r)
 }
 
 // +kubebuilder:rbac:groups=kueue.x-k8s.io,resources=clusterqueues,verbs=get;list;watch
@@ -238,7 +238,7 @@ func (r *variantReconciler) getVariantsForParent(ctx context.Context, parent *ku
 	}
 	variants := make([]kueue.Workload, 0)
 	for i := range list.Items {
-		if workload.GetParentVariant(&list.Items[i]) == parent.Name {
+		if getParentVariant(&list.Items[i]) == parent.Name {
 			variants = append(variants, list.Items[i])
 		}
 	}
@@ -294,8 +294,8 @@ func generateVariant(parent *kueue.Workload, flavor kueue.ResourceFlavorReferenc
 		Spec:   parent.Spec,
 		Status: parent.Status,
 	}
-	delete(variant.Labels, workload.ParentVariantLabel)
-	metav1.SetMetaDataAnnotation(&variant.ObjectMeta, WorkloadAllowedResourceFlavorAnnotation, string(flavor))
+	delete(variant.Labels, constants.ParentVariantLabel)
+	metav1.SetMetaDataAnnotation(&variant.ObjectMeta, constants.WorkloadAllowedResourceFlavorAnnotation, string(flavor))
 	return variant
 }
 
@@ -304,7 +304,7 @@ func getVariantFlavor(wl *kueue.Workload) kueue.ResourceFlavorReference {
 	if annotations == nil {
 		return ""
 	}
-	return kueue.ResourceFlavorReference(annotations[WorkloadAllowedResourceFlavorAnnotation])
+	return kueue.ResourceFlavorReference(annotations[constants.WorkloadAllowedResourceFlavorAnnotation])
 }
 
 func (r *variantReconciler) hasVariantWithFlavor(variants []kueue.Workload, flavor kueue.ResourceFlavorReference) bool {
@@ -401,7 +401,7 @@ func (r *variantReconciler) deactivateVariants(ctx context.Context, parent *kueu
 		return nil
 	}
 
-	admittedWl := workload.GetAdmittedVariant(variants)
+	admittedWl := getAdmittedVariant(variants)
 	if admittedWl == nil {
 		log.V(2).Info("No admitted variant, no need to deactivate any variant")
 		return nil
@@ -446,7 +446,7 @@ func (r *variantReconciler) activateVariants(ctx context.Context, parent *kueue.
 		log.V(2).Info("Parent is not active, no needed to activate variants", "parent", parent.Name)
 		return nil
 	}
-	admittedVariant := workload.GetAdmittedVariant(variants)
+	admittedVariant := getAdmittedVariant(variants)
 	if admittedVariant == nil {
 		log.V(2).Info("No admitted variant, activating all variants")
 		// no admitted variants so activate all variants if they are not active, case of preemption
@@ -526,7 +526,7 @@ func (r *variantReconciler) syncAdmissionStatus(ctx context.Context, parent *kue
 		return r.syncFinished(ctx, parent, variants)
 	}
 
-	admittedVariant := workload.GetAdmittedVariant(variants)
+	admittedVariant := getAdmittedVariant(variants)
 	switch {
 	case admittedVariant == nil && workload.IsAdmitted(parent):
 		// variant got evicted
@@ -634,7 +634,7 @@ func (r *variantReconciler) shouldReconcile(wl *kueue.Workload) bool {
 		log.V(2).Info("Workload is a parent variant, reconciling", "name", wl.Name, "namespace", wl.Namespace)
 		return true
 	}
-	if workload.IsVariant(wl) {
+	if IsVariant(wl) {
 		log.V(2).Info("Workload is a variant, reconciling", "name", wl.Name, "namespace", wl.Namespace)
 		return true
 	}
@@ -679,7 +679,7 @@ func (h *clusterQueueHandler) queueReconcileForCQ(object client.Object, q workqu
 	workloadsInfo := h.queues.PendingWorkloadsInfo(kueue.ClusterQueueReference(cq.Name))
 	for _, info := range workloadsInfo {
 		wl := info.Obj
-		parentName := workload.GetParentVariant(wl)
+		parentName := getParentVariant(wl)
 		q.Add(reconcile.Request{
 			NamespacedName: client.ObjectKey{
 				Namespace: wl.Namespace,
@@ -690,7 +690,7 @@ func (h *clusterQueueHandler) queueReconcileForCQ(object client.Object, q workqu
 	for wlName, cqRef := range h.cache.WorkloadAssignedQueues() {
 		if cqRef == kueue.ClusterQueueReference(cq.Name) {
 			wl := h.cache.GetWorkloadInfo(wlName)
-			parentName := workload.GetParentVariant(wl.Obj)
+			parentName := getParentVariant(wl.Obj)
 			// requeue parent of running variant
 			q.Add(reconcile.Request{
 				NamespacedName: client.ObjectKey{
