@@ -383,6 +383,57 @@ func TestValidateClusterQueue(t *testing.T) {
 			wantDetail:   `preference "PreemptionOverBorrowing" requires both whenCanBorrow and whenCanPreempt to be TryNextFlavor`,
 			wantBadValue: string(kueue.PreemptionOverBorrowing),
 		},
+		{
+			name: "valid ConcurrentAdmissionPolicy",
+			clusterQueue: &kueue.ClusterQueue{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster-queue"},
+				Spec: kueue.ClusterQueueSpec{
+					ConcurrentAdmissionPolicy: &kueue.ConcurrentAdmissionPolicy{},
+					ResourceGroups: []kueue.ResourceGroup{
+						{
+							CoveredResources: []corev1.ResourceName{"cpu"},
+							Flavors: []kueue.FlavorQuotas{
+								{Name: "flavor1", Resources: []kueue.ResourceQuota{{Name: "cpu", NominalQuota: resource.MustParse("1")}}},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "ConcurrentAdmissionPolicy with more than one ResourceGroup",
+			clusterQueue: &kueue.ClusterQueue{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster-queue"},
+				Spec: kueue.ClusterQueueSpec{
+					ConcurrentAdmissionPolicy: &kueue.ConcurrentAdmissionPolicy{},
+					ResourceGroups: []kueue.ResourceGroup{
+						{CoveredResources: []corev1.ResourceName{"cpu"}},
+						{CoveredResources: []corev1.ResourceName{"memory"}},
+					},
+				},
+			},
+			wantErr: field.ErrorList{
+				field.Invalid(specPath.Child("resourceGroups"), 2, "cannot have more than one ResourceGroup when ConcurrentAdmissionPolicy is defined"),
+			},
+		},
+		{
+			name: "ConcurrentAdmissionPolicy with more than 16 flavors",
+			clusterQueue: &kueue.ClusterQueue{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster-queue"},
+				Spec: kueue.ClusterQueueSpec{
+					ConcurrentAdmissionPolicy: &kueue.ConcurrentAdmissionPolicy{},
+					ResourceGroups: []kueue.ResourceGroup{
+						{
+							CoveredResources: []corev1.ResourceName{"cpu"},
+							Flavors:          makeFlavors(17),
+						},
+					},
+				},
+			},
+			wantErr: field.ErrorList{
+				field.Invalid(specPath.Child("resourceGroups").Index(0).Child("flavors"), 17, "cannot have more than 16 resource flavors in the ResourceGroup when ConcurrentAdmissionPolicy is defined"),
+			},
+		},
 	}
 
 	for _, tc := range testcases {

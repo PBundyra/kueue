@@ -126,6 +126,7 @@ func validateClusterQueueSpec(cq *kueue.ClusterQueue) field.ErrorList {
 	allErrs = append(allErrs, validateTotalFlavors(cq.Spec.ResourceGroups, path.Child("resourceGroups"))...)
 	allErrs = append(allErrs, validateTotalCoveredResources(cq.Spec.ResourceGroups, path.Child("resourceGroups"))...)
 	allErrs = append(allErrs, validateFlavorResourceCombinations(cq.Spec.ResourceGroups, path.Child("resourceGroups"))...)
+	allErrs = append(allErrs, validateConcurrentAdmissionPolicy(cq, path)...)
 	return allErrs
 }
 
@@ -219,6 +220,25 @@ func validateFlavorResourceCombinations(resourceGroups []kueue.ResourceGroup, pa
 			))
 		}
 	}
+	return allErrs
+}
+
+func validateConcurrentAdmissionPolicy(cq *kueue.ClusterQueue, path *field.Path) field.ErrorList {
+	var allErrs field.ErrorList
+	if cq.Spec.ConcurrentAdmissionPolicy == nil {
+		return allErrs
+	}
+
+	if len(cq.Spec.ResourceGroups) > 1 {
+		allErrs = append(allErrs, field.Invalid(path.Child("resourceGroups"), len(cq.Spec.ResourceGroups),
+			"cannot have more than one ResourceGroup when ConcurrentAdmissionPolicy is defined"))
+	}
+
+	if len(cq.Spec.ResourceGroups) == 1 && len(cq.Spec.ResourceGroups[0].Flavors) > 16 {
+		allErrs = append(allErrs, field.Invalid(path.Child("resourceGroups").Index(0).Child("flavors"), len(cq.Spec.ResourceGroups[0].Flavors),
+			"cannot have more than 16 resource flavors in the ResourceGroup when ConcurrentAdmissionPolicy is defined"))
+	}
+
 	return allErrs
 }
 
